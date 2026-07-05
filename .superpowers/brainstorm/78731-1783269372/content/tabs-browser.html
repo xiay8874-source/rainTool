@@ -1,0 +1,101 @@
+<h2>浏览器风格标签页 · 亮色优雅</h2>
+<p class="subtitle">模仿 Chrome 标签:梯形圆角、活动标签与下方连通、非活动标签略矮。点击选中或终端反馈。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="chrome-style" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:280px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <!-- 侧边栏 -->
+        <div style="width:26%;background:#fbfbfd;padding:12px 10px;border-right:1px solid #ececf0">
+          <div style="font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:10px">DevToolbox</div>
+          <div style="padding:4px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500">JSON 工作台</div>
+          <div style="padding:4px 8px;color:#6b7280">JSON 格式化</div>
+          <div style="padding:4px 8px;color:#6b7280">AES 加解密</div>
+          <div style="padding:4px 8px;color:#6b7280">Base64</div>
+        </div>
+        <!-- 主区 -->
+        <div style="flex:1;display:flex;flex-direction:column">
+          <!-- 浏览器风格标签栏 -->
+          <div style="display:flex;align-items:flex-end;background:#e8eaee;padding:0 8px;height:34px;gap:2px">
+            <!-- 活动标签:梯形连通 -->
+            <div style="position:relative;background:#fff;padding:7px 14px 7px 16px;display:flex;align-items:center;gap:8px;color:#1a1a2e;font-weight:500;font-size:11px;border-radius:9px 9px 0 0;margin-top:3px;min-width:120px">
+              <span style="font-size:11px">📝</span>
+              <span>JSON 工作台</span>
+              <span style="color:#c4c8d4;font-size:14px;line-height:1;margin-left:auto">✕</span>
+            </div>
+            <!-- 非活动标签:略矮 -->
+            <div style="background:#dfe1e6;padding:6px 12px;display:flex;align-items:center;gap:6px;color:#6b7280;font-size:11px;border-radius:8px 8px 0 0;margin-top:5px">
+              <span>📝</span><span>JSON 工作台</span><span style="color:#4f46e5;font-size:9px;background:#eef2ff;padding:1px 4px;border-radius:3px">副本</span><span style="color:#b4b8c4;font-size:13px">✕</span>
+            </div>
+            <div style="background:#dfe1e6;padding:6px 12px;display:flex;align-items:center;gap:6px;color:#6b7280;font-size:11px;border-radius:8px 8px 0 0;margin-top:5px">
+              <span>🔐</span><span>AES 加解密</span><span style="color:#b4b8c4;font-size:13px">✕</span>
+            </div>
+            <!-- 新标签按钮 -->
+            <div style="padding:6px 8px;color:#9aa0b4;font-size:15px;margin-left:2px">＋</div>
+          </div>
+          <!-- 工具栏(与活动标签连通,无间隙) -->
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">JSON 工作台</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">⎘ 复制此页</div>
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">格式化</div>
+              <div style="padding:3px 9px;background:#4f46e5;border-radius:6px;color:#fff;font-size:9px">复制结果</div>
+            </div>
+          </div>
+          <!-- 内容 -->
+          <div style="flex:1;padding:10px 14px;display:flex;gap:8px;background:#f7f8fa">
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px;color:#3d4252">{<br>&nbsp;&nbsp"name": "test",<br>&nbsp;&nbsp"items": [1, 2]<br>}</div>
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px"><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">name</span>: "test"<br><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">items</span>: <span style="color:#9aa0b4">Array(2)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Chrome 风格标签页 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>梯形圆角,活动标签白色与工具栏连通,非活动标签灰底略矮。新标签 ＋ 按钮在末尾。熟悉的浏览器操作直觉。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="safari-style" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:280px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <div style="width:26%;background:#fbfbfd;padding:12px 10px;border-right:1px solid #ececf0">
+          <div style="font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:10px">DevToolbox</div>
+          <div style="padding:4px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500">JSON 工作台</div>
+          <div style="padding:4px 8px;color:#6b7280">AES 加解密</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column">
+          <!-- Safari 风格:等宽圆角胶囊 -->
+          <div style="display:flex;align-items:center;background:#fff;border-bottom:1px solid #ececf0;padding:8px 10px;gap:6px">
+            <div style="background:#1a1a2e;color:#fff;padding:5px 12px;border-radius:7px;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:500">📝 JSON 工作台 <span style="color:#6b7280;font-size:12px">✕</span></div>
+            <div style="background:#f0f1f4;color:#6b7280;padding:5px 12px;border-radius:7px;display:flex;align-items:center;gap:6px;font-size:10px">📝 JSON #2 <span style="color:#c4c8d4;font-size:12px">✕</span></div>
+            <div style="background:#f0f1f4;color:#6b7280;padding:5px 12px;border-radius:7px;display:flex;align-items:center;gap:6px;font-size:10px">🔐 AES <span style="color:#c4c8d4;font-size:12px">✕</span></div>
+            <div style="color:#9aa0b4;font-size:14px;padding:0 4px">＋</div>
+            <div style="margin-left:auto;color:#9aa0b4;font-size:9px">⌘T 新建 · ⌘W 关闭</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">JSON 工作台</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">⎘ 复制此页</div>
+              <div style="padding:3px 9px;background:#4f46e5;border-radius:6px;color:#fff;font-size:9px">复制结果</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:10px 14px;display:flex;gap:8px;background:#f7f8fa">
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px">{<br>&nbsp;&nbsp"name": "test"<br>}</div>
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px"><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">name</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Safari 风格等宽胶囊</h3>
+      <p>等宽圆角胶囊标签,活动标签深色填充。更紧凑现代,但标签多时宽度受限、不易看清标题。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252">
+  <strong style="color:#1a1a2e">推荐 Chrome 风格:</strong> 梯形连通是浏览器最经典的标签形态,操作直觉强(点切换、双击关闭/复制、拖拽排序、中键关闭),亮色下白底+灰栏的对比也最干净。
+</div>

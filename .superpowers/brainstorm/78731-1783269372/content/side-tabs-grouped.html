@@ -1,0 +1,134 @@
+<h2>侧边标签页 + 可分组 · 亮色优雅</h2>
+<p class="subtitle">标签页移到侧边,可收起/呼出。按工具类型自动分组,支持自定义分组、跨类型归组。点击选中或终端反馈。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="side-tabs-grouped" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:300px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <!-- 左:工具分类导航(窄) -->
+        <div style="width:14%;background:#fbfbfd;padding:10px 6px;border-right:1px solid #ececf0;display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:#4f46e5">≡</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <div style="width:28px;height:28px;background:#eef2ff;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px">📝</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">🔐</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">🕒</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">🔤</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">📐</div>
+        </div>
+        <!-- 中:标签页侧栏(可收起) -->
+        <div style="width:26%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px;display:flex;flex-direction:column;gap:6px;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;font-weight:600;color:#1a1a2e">标签页</span>
+            <span style="font-size:10px;color:#9aa0b4;padding:2px 6px;background:#f7f8fa;border-radius:5px">≪ 收起</span>
+          </div>
+          <!-- 分组1: JSON 相关(自动分组) -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;margin-bottom:3px">
+              <span style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px">JSON 工作台 ▾</span>
+              <span style="font-size:11px;color:#c4c8d4">＋</span>
+            </div>
+            <div style="padding:5px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>📝</span><span style="flex:1">JSON 工作台 #1</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>📝</span><span style="flex:1">JSON 工作台 #2</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+          </div>
+          <!-- 分组2: 自定义分组(跨类型) -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;margin:6px 0 3px">
+              <span style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px">⭐ 接口调试 ▾</span>
+              <span style="font-size:11px;color:#c4c8d4">＋</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>📝</span><span style="flex:1">登录响应 JSON</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>🔧</span><span style="flex:1">登录 JWT 解析</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>🔌</span><span style="flex:1">登录接口 HTTP</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+          </div>
+          <!-- 分组3: 加密 -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;margin:6px 0 3px">
+              <span style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px">加密哈希 ▾</span>
+              <span style="font-size:11px;color:#c4c8d4">＋</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>🔐</span><span style="flex:1">AES 加密</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+          </div>
+          <div style="margin-top:auto;padding:4px;color:#9aa0b4;font-size:10px;text-align:center;border-top:1px solid #ececf0">＋ 新建分组</div>
+        </div>
+        <!-- 右:工作区 -->
+        <div style="flex:1;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">JSON 工作台 #1</div>
+            <div style="color:#9aa0b4;font-size:10px">JSON 工作台分组</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">⎘ 复制此页</div>
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">📁 移动到分组</div>
+              <div style="padding:3px 9px;background:#4f46e5;border-radius:6px;color:#fff;font-size:9px">复制结果</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:10px 14px;display:flex;gap:8px;background:#f7f8fa">
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px;color:#3d4252">{<br>&nbsp;&nbsp"name": "test",<br>&nbsp;&nbsp"items": [1, 2]<br>}</div>
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px"><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">name</span>: "test"<br><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">items</span>: <span style="color:#9aa0b4">Array(2)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>侧边标签栏 + 自动/自定义分组 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>最左窄图标栏选工具类型,中间标签栏展示已开标签并按分组组织,可收起。新建标签自动归入对应类型分组,也可拖拽/右键移到自定义分组(跨类型混合)。</p>
+    </div>
+  </div>
+
+  <!-- 收起态 -->
+  <div class="card" data-choice="side-tabs-collapsed" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:300px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <div style="width:14%;background:#fbfbfd;padding:10px 6px;border-right:1px solid #ececf0;display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:#4f46e5">≡</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <div style="width:28px;height:28px;background:#eef2ff;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px">📝</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">🔐</div>
+          <div style="width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#9aa0b4">🕒</div>
+        </div>
+        <!-- 收起态:只留一个呼出条 -->
+        <div style="width:20px;background:#fff;border-right:1px solid #ececf0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#9aa0b4;font-size:10px">
+          <div style="writing-mode:vertical-rl;font-size:9px">标签页 (5)</div>
+          <div style="font-size:14px">≫</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">JSON 工作台 #1</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">⎘ 复制此页</div>
+              <div style="padding:3px 9px;background:#4f46e5;border-radius:6px;color:#fff;font-size:9px">复制结果</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:14px;background:#f7f8fa">
+            <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;height:100%;font-family:'SF Mono',monospace;font-size:9px;color:#3d4252">{<br>&nbsp;&nbsp"name": "test",<br>&nbsp;&nbsp"items": [1, 2]<br>}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>收起态 · 最大化工作区</h3>
+      <p>标签栏收起为窄条,显示标签数量,点 ≫ 呼出。工作区占满空间,适合专注单个任务时。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252;line-height:1.7">
+  <strong style="color:#1a1a2e">分组规则:</strong><br>
+  ① <strong>自动分组</strong> — 新建标签默认按工具类型归组(JSON 工作台、加密哈希、编码转换…)<br>
+  ② <strong>自定义分组</strong> — 可新建分组并命名(如"⭐ 接口调试"),把不同类型的标签拖进去混合存放<br>
+  ③ <strong>移动分组</strong> — 标签可拖拽到其他分组,或工具栏"📁 移动到分组"菜单选择<br>
+  ④ <strong>收起/呼出</strong> — 标签栏可收起为窄条(显示数量),点击呼出;分组本身也可折叠/展开
+</div>

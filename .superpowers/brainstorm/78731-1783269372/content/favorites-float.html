@@ -1,0 +1,118 @@
+<h2>收藏夹 · 悬浮窗口</h2>
+<p class="subtitle">收藏夹做成可拖拽悬浮窗,不占布局,随时呼出/收起。点击选中或终端反馈。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="float-window" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:360px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex;position:relative">
+        <!-- 工具图标栏 -->
+        <div style="width:9%;background:#fbfbfd;padding:10px 6px;border-right:1px solid #ececf0;display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:#4f46e5">≡</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <div style="width:26px;height:26px;background:#eef2ff;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px">📝</div>
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">🔐</div>
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">🕒</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <div style="width:26px;height:26px;background:#4f46e5;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff">★</div>
+        </div>
+        <!-- 标签页侧栏 -->
+        <div style="width:23%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px;display:flex;flex-direction:column;gap:4px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e;margin-bottom:4px">标签页</div>
+          <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;padding:2px 4px">⭐ 接口调试 ▾</div>
+          <div style="padding:5px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500;display:flex;align-items:center;gap:5px;font-size:10px">
+            <span>📝</span><span style="flex:1">登录响应 JSON</span><span style="color:#c4c8d4">✕</span>
+          </div>
+          <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+            <span>🔧</span><span style="flex:1">登录 JWT</span><span style="color:#c4c8d4">✕</span>
+          </div>
+          <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+            <span>🔌</span><span style="flex:1">登录 HTTP</span><span style="color:#c4c8d4">✕</span>
+          </div>
+        </div>
+        <!-- 工作区 -->
+        <div style="flex:1;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">登录响应 JSON</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">★ 收藏此页</div>
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">★ 收藏当前分组</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:14px;background:#f7f8fa">
+            <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;height:100%;font-family:'SF Mono',monospace;font-size:9px">{<br>&nbsp;&nbsp"code": 0,<br>&nbsp;&nbsp"token": "eyJ..."<br>}</div>
+          </div>
+        </div>
+
+        <!-- 悬浮收藏夹窗口 -->
+        <div style="position:absolute;right:18px;top:60px;width:248px;background:#fff;border:1px solid #d8dbe2;border-radius:12px;box-shadow:0 12px 32px rgba(20,25,45,.14),0 2px 6px rgba(20,25,45,.06);overflow:hidden">
+          <!-- 悬浮窗标题栏(可拖拽) -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:linear-gradient(180deg,#fff,#fafbfc);border-bottom:1px solid #ececf0;cursor:move">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:13px;color:#4f46e5">★</span>
+              <span style="font-size:11px;font-weight:600;color:#1a1a2e">收藏夹</span>
+              <span style="font-size:9px;color:#9aa0b4;background:#f7f8fa;padding:1px 5px;border-radius:4px">8</span>
+            </div>
+            <div style="display:flex;gap:8px;color:#9aa0b4;font-size:12px">
+              <span>＋</span>
+              <span style="font-size:14px;line-height:1">⌄</span>
+              <span>✕</span>
+            </div>
+          </div>
+          <!-- 搜索 -->
+          <div style="padding:8px 10px;border-bottom:1px solid #f0f1f4">
+            <div style="background:#f7f8fa;border-radius:6px;padding:4px 8px;font-size:10px;color:#9aa0b4">🔍 搜索收藏...</div>
+          </div>
+          <!-- 收藏分组 -->
+          <div style="padding:6px 10px;max-height:220px;overflow:auto">
+            <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;padding:4px 2px 3px">收藏分组 ▾</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f7f8fa;border-radius:6px;margin-bottom:4px">
+              <div>
+                <div style="font-size:10px;font-weight:600;color:#1a1a2e">📁 接口调试全流程</div>
+                <div style="font-size:9px;color:#9aa0b4;margin-top:1px">3 标签 · 含分组</div>
+              </div>
+              <span style="color:#4f46e5;font-size:10px;background:#fff;padding:2px 6px;border-radius:5px;border:1px solid #e0e3eb">↺ 恢复</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f7f8fa;border-radius:6px;margin-bottom:4px">
+              <div>
+                <div style="font-size:10px;font-weight:600;color:#1a1a2e">📁 生产配置对比</div>
+                <div style="font-size:9px;color:#9aa0b4;margin-top:1px">5 标签 · 2 分组</div>
+              </div>
+              <span style="color:#4f46e5;font-size:10px;background:#fff;padding:2px 6px;border-radius:5px;border:1px solid #e0e3eb">↺ 恢复</span>
+            </div>
+            <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;padding:6px 2px 3px">单个标签 ▾</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;margin-bottom:3px">
+              <div style="display:flex;align-items:center;gap:5px"><span>📝</span><span style="font-size:10px;color:#3d4252">线上响应模板</span></div>
+              <span style="color:#9aa0b4;font-size:11px">↺</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;margin-bottom:3px">
+              <div style="display:flex;align-items:center;gap:5px"><span>🔐</span><span style="font-size:10px;color:#3d4252">AES 密钥测试</span></div>
+              <span style="color:#9aa0b4;font-size:11px">↺</span>
+            </div>
+          </div>
+          <!-- 底部 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-top:1px solid #f0f1f4;background:#fafbfc">
+            <span style="font-size:9px;color:#9aa0b4">⌘B 唤起/收起</span>
+            <span style="font-size:9px;color:#9aa0b4">拖拽标题栏移动</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>悬浮窗收藏夹 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>收藏夹为独立悬浮窗,拖拽标题栏可移到任意位置,不挤占布局。⌘B 快捷键唤起/收起,关闭后从左侧 ★ 图标重新呼出。内容与之前一致:支持分组收藏 + 单标签收藏 + 完整恢复分组结构。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252;line-height:1.8">
+  <strong style="color:#1a1a2e">悬浮窗行为:</strong><br>
+  ① <strong>呼出/收起</strong> — 左侧 ★ 图标点击切换,或 ⌘B 快捷键;关闭(✕)后图标高亮提示有收藏<br>
+  ② <strong>拖拽</strong> — 拖标题栏可在应用内任意位置移动;记住位置,下次呼出在原位<br>
+  ③ <strong>尺寸</strong> — 可拖边角调整大小;搜索框 + 滚动列表适配大量收藏<br>
+  ④ <strong>失焦行为</strong> — 点窗外区域工作区正常操作,窗口不自动关闭(可配"失焦自动收起")<br>
+  ⑤ <strong>不占布局</strong> — 悬浮在工作区之上,收起后布局完全不变<br>
+  ⑥ 收藏内容不变:分组收藏(含完整分组结构) + 单标签收藏 + ↺ 完整恢复
+</div>

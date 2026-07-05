@@ -1,0 +1,158 @@
+<h2>分组右键菜单 · 参考 Chrome Tab Groups</h2>
+<p class="subtitle">两套上下文菜单:① 点击组标题 → 组管理 ② 右键组内标签 → 单页在组内的操作。点击选中或终端反馈。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="group-header-menu" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:400px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;position:relative;display:flex">
+        <!-- 标签页侧栏 -->
+        <div style="width:32%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e;margin-bottom:8px">标签页</div>
+
+          <!-- 分组1: 彩色标签组 -->
+          <div style="margin-bottom:10px">
+            <!-- 组标题(被点击,高亮) -->
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:#eef2ff;border-left:3px solid #4f46e5;border-radius:0 6px 6px 0;margin-bottom:4px;cursor:pointer">
+              <span style="width:8px;height:8px;background:#4f46e5;border-radius:50%"></span>
+              <span style="font-size:10px;font-weight:600;color:#1a1a2e;flex:1">接口调试</span>
+              <span style="font-size:9px;color:#9aa0b4">(3)</span>
+              <span style="font-size:10px;color:#9aa0b4">▾</span>
+            </div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>📝</span><span style="flex:1">登录响应 JSON</span>
+            </div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>🔧</span><span style="flex:1">登录 JWT</span>
+            </div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>🔌</span><span style="flex:1">登录 HTTP</span>
+            </div>
+          </div>
+
+          <!-- 分组2 -->
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-left:3px solid #10b981;border-radius:0 6px 6px 0;margin-bottom:4px">
+              <span style="width:8px;height:8px;background:#10b981;border-radius:50%"></span>
+              <span style="font-size:10px;font-weight:600;color:#1a1a2e;flex:1">加密调试</span>
+              <span style="font-size:9px;color:#9aa0b4">(2)</span>
+              <span style="font-size:10px;color:#9aa0b4">▾</span>
+            </div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;font-size:10px">🔐 AES 加密</div>
+          </div>
+        </div>
+
+        <!-- 右侧留白 -->
+        <div style="flex:1;background:#f7f8fa"></div>
+
+        <!-- 悬浮:组标题右键菜单 -->
+        <div style="position:absolute;left:30%;top:50px;width:230px;background:#fff;border:1px solid #d8dbe2;border-radius:10px;box-shadow:0 12px 32px rgba(20,25,45,.14),0 2px 6px rgba(20,25,45,.06);overflow:hidden;z-index:10">
+          <!-- 组名输入 -->
+          <div style="padding:10px 12px;border-bottom:1px solid #f0f1f4">
+            <div style="font-size:9px;color:#9aa0b4;margin-bottom:5px">分组名称</div>
+            <div style="background:#f7f8fa;border:1px solid #4f46e5;border-radius:6px;padding:5px 8px;font-size:11px;color:#1a1a2e">接口调试</div>
+          </div>
+          <!-- 颜色选择 -->
+          <div style="padding:8px 12px;border-bottom:1px solid #f0f1f4">
+            <div style="font-size:9px;color:#9aa0b4;margin-bottom:6px">标签颜色</div>
+            <div style="display:flex;gap:6px">
+              <span style="width:18px;height:18px;background:#9aa0b4;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #d8dbe2"></span>
+              <span style="width:18px;height:18px;background:#ef4444;border-radius:50%"></span>
+              <span style="width:18px;height:18px;background:#f59e0b;border-radius:50%"></span>
+              <span style="width:18px;height:18px;background:#4f46e5;border-radius:50%;box-shadow:0 0 0 2px #4f46e5,0 0 0 4px #eef2ff"></span>
+              <span style="width:18px;height:18px;background:#10b981;border-radius:50%"></span>
+              <span style="width:18px;height:18px;background:#ec4899;border-radius:50%"></span>
+            </div>
+          </div>
+          <!-- 菜单项 -->
+          <div style="padding:4px 0">
+            <div style="padding:6px 12px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#3d4252">在组内添加新标签页 <span style="font-size:9px;color:#9aa0b4">⌃⌘N</span></div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">将分组移至新窗口</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">★ 全部保存到收藏夹</div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">↕ 调整分组顺序</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">解散标签组 <span style="font-size:9px;color:#9aa0b4">(保留标签)</span></div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">关闭标签组 <span style="font-size:9px;color:#9aa0b4">⌃⌘W</span></div>
+            <div style="padding:6px 12px;font-size:11px;color:#e94560">关闭并删除标签组</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>① 点击组标题 → 组管理菜单</h3>
+      <p>改名 + 选颜色 + 组内增删 + 批量收藏 + 解散/关闭组。影响整个组的所有标签。</p>
+    </div>
+  </div>
+
+  <!-- 场景2 -->
+  <div class="card" data-choice="tab-in-group-menu" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:400px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;position:relative;display:flex">
+        <div style="width:32%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e;margin-bottom:8px">标签页</div>
+          <div style="margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-left:3px solid #4f46e5;border-radius:0 6px 6px 0;margin-bottom:4px">
+              <span style="width:8px;height:8px;background:#4f46e5;border-radius:50%"></span>
+              <span style="font-size:10px;font-weight:600;color:#1a1a2e;flex:1">接口调试</span>
+              <span style="font-size:9px;color:#9aa0b4">(3)</span>
+            </div>
+            <!-- 被右键的标签(高亮) -->
+            <div style="padding:4px 8px 4px 18px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500;display:flex;align-items:center;gap:5px;font-size:10px;margin-bottom:2px">
+              <span>🔧</span><span style="flex:1">登录 JWT</span>
+            </div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;font-size:10px">📝 登录响应 JSON</div>
+            <div style="padding:4px 8px 4px 18px;color:#6b7280;font-size:10px">🔌 登录 HTTP</div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-left:3px solid #10b981;border-radius:0 6px 6px 0;margin-bottom:4px">
+              <span style="width:8px;height:8px;background:#10b981;border-radius:50%"></span>
+              <span style="font-size:10px;font-weight:600;color:#1a1a2e;flex:1">加密调试</span>
+              <span style="font-size:9px;color:#9aa0b4">(2)</span>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;background:#f7f8fa"></div>
+
+        <!-- 右键标签菜单 -->
+        <div style="position:absolute;left:24%;top:80px;width:215px;background:#fff;border:1px solid #d8dbe2;border-radius:10px;box-shadow:0 12px 32px rgba(20,25,45,.14),0 2px 6px rgba(20,25,45,.06);overflow:hidden;z-index:10">
+          <div style="padding:4px 0">
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">在下方新增标签页</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">⎘ 复制此页</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">★ 收藏此页</div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#3d4252">
+              <span>📁 移动到分组</span><span style="color:#9aa0b4">▸</span>
+            </div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">↩ 移出当前标签组</div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">将标签页移至新窗口</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252">📌 固定标签页</div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;font-size:11px;color:#e94560">关闭标签页</div>
+          </div>
+
+          <!-- 二级菜单:移动到分组 -->
+          <div style="position:absolute;left:100%;top:128px;width:150px;background:#fff;border:1px solid #d8dbe2;border-radius:10px;box-shadow:0 12px 32px rgba(20,25,45,.14);overflow:hidden">
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;background:#10b981;border-radius:50%"></span>加密调试</div>
+            <div style="padding:6px 12px;font-size:11px;color:#3d4252;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;background:#9aa0b4;border-radius:50%"></span>未分组</div>
+            <div style="height:1px;background:#f0f1f4;margin:4px 0"></div>
+            <div style="padding:6px 12px;font-size:11px;color:#4f46e5">＋ 新建分组</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>② 右键组内标签 → 单页操作菜单</h3>
+      <p>新增/复制/收藏 + 移动到其他分组(二级菜单) + 移出当前组 + 移至新窗口 + 固定 + 关闭。影响单个标签。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252;line-height:1.8">
+  <strong style="color:#1a1a2e">两套菜单对应两个对象:</strong><br>
+  <strong>① 组标题菜单(管容器):</strong> 改名 / 选颜色 / 组内加标签 / 移组到新窗口 / 全部收藏 / 解散组(保留标签) / 关闭组 / 删除组<br>
+  <strong>② 组内标签菜单(管个体):</strong> 下方新增 / 复制 / 收藏 / 移动到其他分组 ▸ / 移出当前组 / 移至新窗口 / 固定 / 关闭<br>
+  <strong>关键差异:</strong> ① 改色改名解散是组级操作;② 移出/移动到其他组是个体在组环境下的位置调整
+</div>

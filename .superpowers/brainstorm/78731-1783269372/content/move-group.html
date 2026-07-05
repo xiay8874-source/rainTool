@@ -1,0 +1,101 @@
+<h2>标签页改变分组 · 交互方式</h2>
+<p class="subtitle">已归组的标签页可随时移到其他分组,支持拖拽/右键/工具栏三种操作。分组本身也可管理。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="move-interactions" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:380px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <!-- 标签页侧栏(展示拖拽中) -->
+        <div style="width:30%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px;display:flex;flex-direction:column;gap:4px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e;margin-bottom:4px">标签页</div>
+
+          <!-- 分组1 -->
+          <div style="border:1px dashed transparent;border-radius:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;margin-bottom:3px">
+              <span style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px">⭐ 接口调试 ▾</span>
+              <span style="font-size:10px;color:#9aa0b4">⋯</span>
+            </div>
+            <div style="padding:5px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>📝</span><span style="flex:1">登录响应 JSON</span><span style="color:#c4c8d4">✕</span>
+            </div>
+            <!-- 被拖拽的标签(半透明) -->
+            <div style="padding:5px 8px;background:#fff;border:1px dashed #4f46e5;border-radius:6px;color:#9aa0b4;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px;opacity:.5">
+              <span>🔧</span><span style="flex:1">登录 JWT</span><span style="color:#c4c8d4">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>🔌</span><span style="flex:1">登录 HTTP</span><span style="color:#c4c8d4">✕</span>
+            </div>
+          </div>
+
+          <!-- 分组2(拖拽目标高亮) -->
+          <div style="border:2px solid #4f46e5;border-radius:6px;background:#f5f7ff;padding:4px;margin-top:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;margin-bottom:3px">
+              <span style="font-size:9px;color:#4f46e5;text-transform:uppercase;letter-spacing:.5px;font-weight:600">🔐 加密调试 ▾</span>
+              <span style="font-size:10px;color:#4f46e5">⋯</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>🔐</span><span style="flex:1">AES 加密</span><span style="color:#c4c8d4">✕</span>
+            </div>
+            <div style="padding:8px;text-align:center;font-size:9px;color:#4f46e5;border:1px dashed #4f46e5;border-radius:5px;margin-top:3px">放到这里加入分组</div>
+          </div>
+        </div>
+
+        <!-- 中间:操作方式说明 -->
+        <div style="width:34%;padding:14px;border-right:1px solid #ececf0;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e">三种改变分组的方式</div>
+
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px">
+            <div style="font-size:10px;font-weight:600;color:#4f46e5;margin-bottom:3px">① 拖拽</div>
+            <div style="font-size:9px;color:#6b7280;line-height:1.5">按住标签拖到目标分组,目标高亮提示,松手即移入。可跨分组拖动。</div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px">
+            <div style="font-size:10px;font-weight:600;color:#4f46e5;margin-bottom:3px">② 右键菜单</div>
+            <div style="background:#fff;border:1px solid #ececf0;border-radius:6px;padding:4px 6px;font-size:9px;color:#3d4252;box-shadow:0 4px 10px rgba(0,0,0,.06)">
+              <div style="padding:3px 4px">⎘ 复制此页</div>
+              <div style="padding:3px 4px">★ 收藏此页</div>
+              <div style="padding:3px 4px;background:#eef2ff;color:#4f46e5;border-radius:4px">📁 移动到分组 ▸</div>
+              <div style="padding:3px 4px;color:#c4c8d4">✕ 关闭</div>
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px">
+            <div style="font-size:10px;font-weight:600;color:#4f46e5;margin-bottom:3px">③ 工具栏下拉</div>
+            <div style="font-size:9px;color:#6b7280;line-height:1.5">工作区工具栏"📁 移动到分组"按钮,展开分组列表选择目标。</div>
+          </div>
+        </div>
+
+        <!-- 右:分组管理 -->
+        <div style="flex:1;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:600;color:#1a1a2e">分组本身的管理</div>
+          <div style="font-size:9px;color:#6b7280;line-height:1.6">点分组名右侧 <strong>⋯</strong> 菜单:</div>
+
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:6px;padding:4px 6px;font-size:9px;color:#3d4252;box-shadow:0 4px 10px rgba(0,0,0,.06);width:fit-content">
+            <div style="padding:3px 4px">✏️ 重命名分组</div>
+            <div style="padding:3px 4px">🎨 设置图标/颜色</div>
+            <div style="padding:3px 4px">⬆️ 上移 / ⬇️ 下移</div>
+            <div style="padding:3px 4px">🔀 合并到其他分组 ▸</div>
+            <div style="padding:3px 4px;color:#e94560">🗑 删除分组(标签移至未分组)</div>
+          </div>
+
+          <div style="margin-top:6px;padding:8px;background:#fff;border:1px solid #ececf0;border-radius:8px;font-size:9px;color:#6b7280;line-height:1.6">
+            <strong style="color:#1a1a2e">未分组区:</strong> 标签若从分组移出或分组被删,自动落入"未分组",可再拖入任意分组。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>标签改变分组 + 分组管理 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>标签可随时通过拖拽/右键/工具栏三种方式移到其他分组。分组本身支持重命名、改图标颜色、排序、合并、删除。删除分组时标签不丢,落入"未分组"区。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252;line-height:1.8">
+  <strong style="color:#1a1a2e">汇总:</strong><br>
+  <strong>标签页改变分组:</strong> ① 拖拽到目标分组(高亮提示) ② 右键 → 移动到分组 ▸ ③ 工具栏"📁 移动到分组"下拉<br>
+  <strong>分组管理(⋯ 菜单):</strong> 重命名 / 改图标颜色 / 上下排序 / 合并到其他分组 / 删除(标签移至未分组)<br>
+  <strong>未分组区:</strong> 兜底,移出或删分组后的标签自动落入,可再分配
+</div>

@@ -1,0 +1,120 @@
+<h2>收藏夹功能 · 完整恢复标签分组</h2>
+<p class="subtitle">收藏单标签或整个分组,恢复时完整还原标签及其分组结构。点击选中或终端反馈。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="favorites-panel" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:340px;font-family:-apple-system,sans-serif;font-size:11px;color:#3d4252;display:flex">
+        <!-- 工具图标栏 -->
+        <div style="width:11%;background:#fbfbfd;padding:10px 6px;border-right:1px solid #ececf0;display:flex;flex-direction:column;align-items:center;gap:8px">
+          <div style="font-size:13px;font-weight:700;color:#4f46e5">≡</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <div style="width:26px;height:26px;background:#eef2ff;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px">📝</div>
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">🔐</div>
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">🕒</div>
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">🔤</div>
+          <div style="width:100%;height:1px;background:#ececf0;margin:2px 0"></div>
+          <!-- 收藏夹入口 -->
+          <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9aa0b4">★</div>
+        </div>
+        <!-- 标签页侧栏 -->
+        <div style="width:24%;background:#fff;border-right:1px solid #ececf0;padding:10px 8px;display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;font-weight:600;color:#1a1a2e">标签页</span>
+            <span style="font-size:10px;color:#9aa0b4">≪ 收起</span>
+          </div>
+          <div>
+            <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;padding:2px 4px;margin-bottom:3px">⭐ 接口调试 ▾</div>
+            <div style="padding:5px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>📝</span><span style="flex:1">登录响应 JSON</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>🔧</span><span style="flex:1">登录 JWT</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px;margin-top:2px">
+              <span>🔌</span><span style="flex:1">登录 HTTP</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+          </div>
+          <div style="margin-top:6px">
+            <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;padding:2px 4px;margin-bottom:3px">加密哈希 ▾</div>
+            <div style="padding:5px 8px;color:#6b7280;display:flex;align-items:center;gap:5px;font-size:10px">
+              <span>🔐</span><span style="flex:1">AES 加密</span><span style="color:#c4c8d4;font-size:11px">✕</span>
+            </div>
+          </div>
+        </div>
+        <!-- 收藏夹浮层/面板 -->
+        <div style="width:24%;background:#fbfbfd;border-right:1px solid #ececf0;padding:10px 8px;display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:11px;font-weight:600;color:#1a1a2e">★ 收藏夹</span>
+            <span style="font-size:10px;color:#9aa0b4">＋ 新建收藏组</span>
+          </div>
+          <!-- 收藏的分组 -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#fff;border:1px solid #ececf0;border-radius:6px;margin-bottom:3px">
+              <div>
+                <div style="font-size:10px;font-weight:600;color:#1a1a2e">📁 接口调试全流程</div>
+                <div style="font-size:9px;color:#9aa0b4;margin-top:1px">3 个标签 · 含分组结构</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:2px;font-size:9px">
+                <span style="color:#4f46e5">↺ 恢复</span>
+                <span style="color:#c4c8d4">✕</span>
+              </div>
+            </div>
+          </div>
+          <!-- 收藏的分组2 -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#fff;border:1px solid #ececf0;border-radius:6px;margin-bottom:3px">
+              <div>
+                <div style="font-size:10px;font-weight:600;color:#1a1a2e">📁 生产环境配置对比</div>
+                <div style="font-size:9px;color:#9aa0b4;margin-top:1px">5 个标签 · 2 个分组</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:2px;font-size:9px">
+                <span style="color:#4f46e5">↺ 恢复</span>
+                <span style="color:#c4c8d4">✕</span>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;padding:6px 4px 2px">单个标签 ▾</div>
+          <!-- 收藏的单个标签 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#fff;border:1px solid #ececf0;border-radius:6px;margin-bottom:3px">
+            <div style="display:flex;align-items:center;gap:5px"><span>📝</span><span style="font-size:10px;color:#1a1a2e">线上响应模板</span></div>
+            <span style="color:#4f46e5;font-size:9px">↺</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;background:#fff;border:1px solid #ececf0;border-radius:6px;margin-bottom:3px">
+            <div style="display:flex;align-items:center;gap:5px"><span>🔐</span><span style="font-size:10px;color:#1a1a2e">常用 AES 密钥测试</span></div>
+            <span style="color:#4f46e5;font-size:9px">↺</span>
+          </div>
+        </div>
+        <!-- 工作区 -->
+        <div style="flex:1;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #ececf0">
+            <div style="font-size:12px;font-weight:600;color:#1a1a2e">登录响应 JSON</div>
+            <div style="margin-left:auto;display:flex;gap:6px">
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">★ 收藏此页</div>
+              <div style="padding:3px 9px;background:#f7f8fa;border:1px solid #ececf0;border-radius:6px;color:#6b7280;font-size:9px">★ 收藏当前分组</div>
+              <div style="padding:3px 9px;background:#4f46e5;border-radius:6px;color:#fff;font-size:9px">复制结果</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:10px 14px;background:#f7f8fa;display:flex;gap:8px">
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px">{<br>&nbsp;&nbsp"code": 0,<br>&nbsp;&nbsp"token": "eyJ..."<br>}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>收藏夹面板 · 分组恢复 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>收藏夹作为独立面板,可收藏单个标签或整个分组(含分组结构)。恢复时完整还原标签及其分组归属。工作区工具栏有"收藏此页""收藏当前分组"两个入口。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252;line-height:1.8">
+  <strong style="color:#1a1a2e">收藏夹机制:</strong><br>
+  ① <strong>收藏粒度</strong> — 可收藏单个标签页,也可收藏整个分组(保存分组名 + 组内所有标签 + 各标签的工具类型与输入内容)<br>
+  ② <strong>收藏分组</strong> — 收藏夹内可建分组整理收藏项(如"常用 JSON 模板""线上环境调试"),与标签页分组是两套独立体系<br>
+  ③ <strong>完整恢复</strong> — 恢复收藏的分组时,原样重建标签 + 分组结构(分组名、组内标签、归属关系全部还原),支持追加到当前标签栏或替换<br>
+  ④ <strong>两个入口</strong> — 工具栏"★ 收藏此页"存单页,"★ 收藏当前分组"存整个分组;收藏夹面板里点"↺ 恢复"<br>
+  ⑤ <strong>持久化</strong> — 收藏存本地,重启应用不丢
+</div>

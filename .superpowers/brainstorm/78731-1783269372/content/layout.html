@@ -1,0 +1,103 @@
+<h2>工具箱界面布局,你偏好哪种?</h2>
+<p class="subtitle">桌面应用的整体结构。点击下方任意布局可选中,也可以在终端说说想法。</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="sidebar" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="display:flex;height:200px;background:#1a1a2e;font-size:11px;color:#aaa">
+        <div style="width:30%;background:#16213e;padding:8px;border-right:1px solid #333">
+          <div style="color:#0ff;margin-bottom:6px;font-weight:bold">⊞ 工具箱</div>
+          <div style="padding:3px 6px;background:#0f3460;border-radius:3px;color:#fff;margin-bottom:2px">📁 编码转换</div>
+          <div style="padding:3px 6px;margin-bottom:2px">　Base64</div>
+          <div style="padding:3px 6px;margin-bottom:2px">　URL 编解码</div>
+          <div style="padding:3px 6px;margin-bottom:2px">📁 加密哈希</div>
+          <div style="padding:3px 6px;margin-bottom:2px">📁 时间日期</div>
+          <div style="padding:3px 6px;background:#e94560;border-radius:3px;color:#fff">📁 JSON 工作台</div>
+          <div style="padding:3px 6px;margin-bottom:2px">📁 代码生成</div>
+        </div>
+        <div style="flex:1;padding:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="font-weight:bold;color:#0ff;font-size:12px">JSON 工作台</div>
+          <div style="display:flex;gap:6px;flex:1">
+            <div style="flex:1;background:#0f3460;border-radius:4px;padding:6px;font-family:monospace;font-size:9px">{"name":"test",<br>"items":[1,2]}</div>
+            <div style="flex:1;background:#0f3460;border-radius:4px;padding:6px;font-family:monospace;font-size:9px;color:#0f0">▸ name: "test"<br>▸ items: Array(2)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 侧边栏分类导航 <span style="color:#0f0;font-size:12px">推荐</span></h3>
+      <p>左侧分类树,右侧工具工作区。类似 VSCode/DevToys。分类清晰,工具多时不乱,扩展性好。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="grid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="height:200px;background:#1a1a2e;padding:10px;font-size:10px;color:#aaa">
+        <div style="color:#0ff;margin-bottom:8px;font-weight:bold;font-size:12px">⊞ 程序员工具箱</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">📝</div>JSON</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🔐</div>加密</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🕒</div>时间</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🔤</div>Base64</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">📐</div>正则</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🔌</div>HTTP</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">⚡</div>SQL</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🔧</div>JWT</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">📋</div>Diff</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🎯</div>UUID</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">🌙</div>cron</div>
+          <div style="background:#16213e;border-radius:4px;padding:8px;text-align:center"><div style="font-size:18px">⬜</div>更多</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 网格卡片首页</h3>
+      <p>首页是所有工具的卡片网格,点击进入工具页。类似 macOS 启动台。视觉直观,但工具多了需要搜索/分页。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="command" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="height:200px;background:#1a1a2e;padding:10px;font-size:10px;color:#aaa;display:flex;flex-direction:column;justify-content:center;align-items:center">
+        <div style="width:90%;background:#16213e;border-radius:6px;padding:10px;border:1px solid #0f3460">
+          <div style="color:#0ff;margin-bottom:8px">🔍 输入工具名或关键词...</div>
+          <div style="background:#0f3460;padding:5px 8px;border-radius:3px;color:#fff;margin-bottom:3px">📝 JSON 格式化</div>
+          <div style="padding:5px 8px;margin-bottom:3px;color:#888">📝 JSON 工作台</div>
+          <div style="padding:5px 8px;color:#888">🔐 AES 加解密</div>
+        </div>
+        <div style="margin-top:10px;color:#666;font-size:9px">⌘K 唤起 · 命令面板驱动</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 命令面板驱动</h3>
+      <p>主交互是 ⌘K/Ctrl+K 唤起搜索框,输入即筛工具。类似 Raycast/Alfred。极简高效,但首次发现工具不直观。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="display:flex;height:200px;background:#1a1a2e;font-size:11px;color:#aaa">
+        <div style="width:8%;background:#0d1b2a;padding:8px 4px;text-align:center">
+          <div style="font-size:16px;margin-bottom:10px">📝</div>
+          <div style="font-size:16px;margin-bottom:10px">🔐</div>
+          <div style="font-size:16px;margin-bottom:10px">🕒</div>
+          <div style="font-size:16px;background:#e94560;border-radius:4px;padding:2px">📝</div>
+          <div style="font-size:16px;margin-bottom:10px">🔧</div>
+          <div style="font-size:16px;margin-bottom:10px">🔌</div>
+        </div>
+        <div style="flex:1;padding:8px">
+          <div style="background:#16213e;border-radius:4px;padding:4px 8px;margin-bottom:6px;color:#0ff">🔍 搜索工具... (⌘K)</div>
+          <div style="background:#0f3460;border-radius:4px;padding:6px;height:140px;font-family:monospace;font-size:9px">JSON 工作台<br>{"name":"test"}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D. 图标侧栏 + 搜索(Dock 风格)</h3>
+      <p>窄图标栏切换分类,顶部全局搜索。结合了导航直观和搜索高效。是 A 和 C 的折中。</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px">我推荐 <strong>A 侧边栏分类导航</strong>:后端工具多、分类天然存在(编码/加密/JSON...),侧边栏能装下所有工具且一眼可见层级,扩展新工具时往分类里加即可,不需要重新设计首页布局。</p>

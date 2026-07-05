@@ -1,0 +1,64 @@
+<h2>亮色优雅风 · 布局对比</h2>
+<p class="subtitle">整体亮色、留白充足、细线分割、克制的强调色。点击选中你偏好的布局。</p>
+
+<div class="cards">
+
+  <!-- A. 侧边栏 -->
+  <div class="card" data-choice="sidebar" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="display:flex;height:220px;font-size:11px;color:#3d4252;font-family:-apple-system,sans-serif">
+        <!-- 侧边栏 -->
+        <div style="width:32%;background:#fbfbfd;padding:12px 10px;border-right:1px solid #ececf0">
+          <div style="font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:10px;letter-spacing:.3px">DevToolbox</div>
+          <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px 4px">编码转换</div>
+          <div style="padding:4px 8px;color:#6b7280">Base64</div>
+          <div style="padding:4px 8px;color:#6b7280">URL 编解码</div>
+          <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px 4px">JSON</div>
+          <div style="padding:4px 8px;background:#eef2ff;border-radius:6px;color:#4f46e5;font-weight:500">JSON 工作台</div>
+          <div style="font-size:9px;color:#9aa0b4;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px 4px">加密哈希</div>
+          <div style="padding:4px 8px;color:#6b7280">AES / MD5 / SHA</div>
+        </div>
+        <!-- 工作区 -->
+        <div style="flex:1;padding:14px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;font-weight:600;color:#1a1a2e">JSON 工作台</div>
+          <div style="display:flex;gap:8px;flex:1">
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px;color:#3d4252">{<br>&nbsp;&nbsp"name": "test",<br>&nbsp;&nbsp"items": [1, 2]<br>}</div>
+            <div style="flex:1;background:#fff;border:1px solid #ececf0;border-radius:8px;padding:8px;font-family:'SF Mono',monospace;font-size:9px"><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">name</span>: "test"<br><span style="color:#9aa0b4">▾</span> <span style="color:#4f46e5">items</span>: <span style="color:#9aa0b4">Array(2)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 侧边栏分类导航 <span style="color:#4f46e5;font-size:12px">推荐</span></h3>
+      <p>左侧分类树,右侧工作区。分类清晰,工具多不乱,扩展性好。亮色下留白和细线让它很干净。</p>
+    </div>
+  </div>
+
+  <!-- B. 网格 -->
+  <div class="card" data-choice="grid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;background:#f7f8fa">
+      <div style="height:220px;padding:14px;font-size:10px;color:#3d4252;font-family:-apple-system,sans-serif">
+        <div style="font-size:12px;font-weight:600;color:#1a1a2e;margin-bottom:12px">DevToolbox</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">📝</div><div style="color:#6b7280;font-size:9px">JSON</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">🔐</div><div style="color:#6b7280;font-size:9px">加密</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">🕒</div><div style="color:#6b7280;font-size:9px">时间</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">🔤</div><div style="color:#6b7280;font-size:9px">Base64</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">📐</div><div style="color:#6b7280;font-size:9px">正则</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">🔌</div><div style="color:#6b7280;font-size:9px">HTTP</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">⚡</div><div style="color:#6b7280;font-size:9px">SQL</div></div>
+          <div style="background:#fff;border:1px solid #ececf0;border-radius:8px;padding:10px;text-align:center"><div style="font-size:16px;margin-bottom:3px">🔧</div><div style="color:#6b7280;font-size:9px">JWT</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 网格卡片首页</h3>
+      <p>首页卡片网格,点进工具页。视觉直观漂亮,但工具多后要靠搜索,且每次切换工具要回首页。</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:18px;padding:14px 16px;background:#fff;border:1px solid #ececf0;border-radius:10px;font-size:13px;color:#3d4252">
+  <strong style="color:#1a1a2e">设计语言:</strong> 纯白卡片 + #f7f8fa 底 + #ececf0 细线 + #4f46e5 靛蓝强调色。克制留白、圆角 8px、无重阴影。类似 Linear / Notion 的清爽感。
+</div>
