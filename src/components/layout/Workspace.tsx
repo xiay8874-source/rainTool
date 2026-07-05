@@ -97,7 +97,7 @@ function EmptyState({
   return (
     <div className="flex h-full flex-col bg-bg-app">
       <div className="border-b border-line bg-bg-surface px-4 py-2">
-        <span className="text-page text-ink-primary">DevToolbox</span>
+        <span className="text-page text-ink-primary">RainTool</span>
       </div>
       <div className="flex flex-1 overflow-auto p-6">
         <div className="mx-auto w-full max-w-3xl">

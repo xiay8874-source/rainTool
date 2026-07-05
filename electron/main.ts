@@ -1,14 +1,17 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import Store from 'electron-store'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !app.isPackaged
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-const store = new Store()
+// electron-store v10:default export,CommonJS 下直接用
+// 用类型断言绕过泛型重载推断的复杂性
+const store = new Store<Record<string, unknown>>() as unknown as {
+  get(key: string): unknown
+  set(key: string, value: unknown): void
+  delete(key: string): void
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -17,7 +20,9 @@ ipcMain.handle('store:get', (_e, key: string) => store.get(key))
 ipcMain.handle('store:set', (_e, key: string, value: unknown) => {
   store.set(key, value)
 })
-ipcMain.handle('store:delete', (_e, key: string) => store.delete(key))
+ipcMain.handle('store:delete', (_e, key: string) => {
+  store.delete(key)
+})
 
 function createWindow() {
   mainWindow = new BrowserWindow({

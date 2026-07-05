@@ -1,5 +1,5 @@
 {
-  "name": "devtoolbox",
+  "name": "raintool",
   "version": "0.1.0",
   "description": "程序员开发工具百宝箱",
   "main": "dist-electron/main.js",
@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "preview": "vite preview",
-    "start": "npm run build:electron && electron ."
+    "start": "npm run build:electron && electron .",
+    "start:prod": "npm run build && npm run build:electron && electron ."
   },
   "dependencies": {
     "react": "^18.3.1",

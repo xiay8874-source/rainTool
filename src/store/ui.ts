@@ -20,7 +20,7 @@ interface UIState {
 
 const savedRect = (() => {
   try {
-    const s = localStorage.getItem('devtoolbox:favoritesRect')
+    const s = localStorage.getItem('raintool:favoritesRect')
     if (s) return JSON.parse(s)
   } catch {
     /* ignore */
@@ -41,7 +41,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setFavoritesRect: (rect) => {
     const next = { ...get().favoritesRect, ...rect }
     try {
-      localStorage.setItem('devtoolbox:favoritesRect', JSON.stringify(next))
+      localStorage.setItem('raintool:favoritesRect', JSON.stringify(next))
     } catch {
       /* ignore */
     }

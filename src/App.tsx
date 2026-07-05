@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import { IconRail } from './layout/IconRail'
-import { TabSidebar } from './layout/TabSidebar'
-import { Workspace } from './layout/Workspace'
-import { FavoritesFloat } from './favorites/FavoritesFloat'
+import { IconRail } from './components/layout/IconRail'
+import { TabSidebar } from './components/layout/TabSidebar'
+import { Workspace } from './components/layout/Workspace'
+import { FavoritesFloat } from './components/favorites/FavoritesFloat'
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore } from '@/store/favorites'
 

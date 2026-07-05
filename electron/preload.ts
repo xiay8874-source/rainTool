@@ -7,4 +7,4 @@ const api = {
   storeDelete: (key: string) => ipcRenderer.invoke('store:delete', key),
 }
 
-contextBridge.exposeInMainWorld('devtoolbox', api)
+contextBridge.exposeInMainWorld('raintool', api)

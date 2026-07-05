@@ -132,12 +132,12 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
   persist: () => {
     const { items, folders } = get()
     try {
-      const w = window as unknown as { devtoolbox?: { storeSet: (k: string, v: unknown) => void } }
-      if (w.devtoolbox?.storeSet) {
-        w.devtoolbox.storeSet(STORE_KEY, { items, folders })
+      const w = window as unknown as { raintool?: { storeSet: (k: string, v: unknown) => void } }
+      if (w.raintool?.storeSet) {
+        w.raintool.storeSet(STORE_KEY, { items, folders })
       } else {
         // 浏览器降级
-        localStorage.setItem('devtoolbox:favorites', JSON.stringify({ items, folders }))
+        localStorage.setItem('raintool:favorites', JSON.stringify({ items, folders }))
       }
     } catch {
       /* ignore */
@@ -147,13 +147,13 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
   hydrate: async () => {
     try {
       const w = window as unknown as {
-        devtoolbox?: { storeGet: (k: string) => Promise<unknown> }
+        raintool?: { storeGet: (k: string) => Promise<unknown> }
       }
       let data: { items?: FavoriteItem[]; folders?: FavoriteFolder[] } | null = null
-      if (w.devtoolbox?.storeGet) {
-        data = (await w.devtoolbox.storeGet(STORE_KEY)) as typeof data
+      if (w.raintool?.storeGet) {
+        data = (await w.raintool.storeGet(STORE_KEY)) as typeof data
       } else {
-        const s = localStorage.getItem('devtoolbox:favorites')
+        const s = localStorage.getItem('raintool:favorites')
         data = s ? JSON.parse(s) : null
       }
       if (data) {

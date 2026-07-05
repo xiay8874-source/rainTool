@@ -113,8 +113,7 @@ function md5(str: string): string {
   }
   function cb(s: string) {
     const n = s.length,
-      x: number[] = [],
-      i: number[] = []
+      x: number[] = []
     for (let i2 = 0; i2 < n; i2++) x[i2 >> 2] = (x[i2 >> 2] || 0) | (s.charCodeAt(i2) << ((i2 % 4) * 8))
     x[n >> 2] = (x[n >> 2] || 0) | (0x80 << ((n % 4) * 8))
     x[(((n + 8) >> 6) + 1) * 16] = n * 8
