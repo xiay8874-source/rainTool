@@ -3,7 +3,6 @@ import { useAppStore } from '@/store/tabs'
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore, snapshotTab, snapshotGroup } from '@/store/favorites'
 import { TOOLS, getTool, CATEGORIES } from '../tools/catalog'
-import { BackIcon, ForwardIcon } from '../icons'
 import type { ToolProps } from '../tools/shared'
 
 // 懒加载工具组件
@@ -24,10 +23,6 @@ export function Workspace() {
   const openTab = useAppStore((s) => s.openTab)
   const setTabInput = useAppStore((s) => s.setTabInput)
   const duplicateTab = useAppStore((s) => s.duplicateTab)
-  const canGoBack = useAppStore((s) => s.canGoBack())
-  const canGoForward = useAppStore((s) => s.canGoForward())
-  const goBack = useAppStore((s) => s.goBack)
-  const goForward = useAppStore((s) => s.goForward)
   const activeCategory = useUIStore((s) => s.activeCategory)
   const addFavTab = useFavoritesStore((s) => s.addTab)
   const addFavGroup = useFavoritesStore((s) => s.addGroup)
@@ -59,27 +54,6 @@ export function Workspace() {
     <div className="flex h-full flex-col bg-bg-app">
       {/* 工具栏:固定 60px 高,与 IconRail/TabSidebar 顶栏对齐,可拖拽移动窗口 */}
       <div className="drag flex h-[60px] items-center gap-2 border-b border-line bg-bg-surface px-4 pt-7">
-        {/* 后退 / 前进:导航历史,放在工具名左侧 */}
-        <div className="flex items-center gap-0.5 no-drag">
-          <button
-            onClick={goBack}
-            disabled={!canGoBack}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-            title="后退 (⌘[)"
-          >
-            <BackIcon size={16} />
-          </button>
-          <button
-            onClick={goForward}
-            disabled={!canGoForward}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-            title="前进 (⌘])"
-          >
-            <ForwardIcon size={16} />
-          </button>
-        </div>
-        {/* 分隔线:导航区与工具名之间 */}
-        <div className="h-4 w-px bg-line" />
         <span className="text-page text-ink-primary">{toolDef?.name ?? activeTab.toolId}</span>
         {activeTab.groupId && (
           <span className="text-caption text-ink-tertiary">
@@ -152,36 +126,12 @@ function EmptyState({
 }) {
   const [selCat, setSelCat] = useState<string | null>(categoryId)
   useEffect(() => setSelCat(categoryId), [categoryId])
-  const canGoBack = useAppStore((s) => s.canGoBack())
-  const canGoForward = useAppStore((s) => s.canGoForward())
-  const goBack = useAppStore((s) => s.goBack)
-  const goForward = useAppStore((s) => s.goForward)
 
   const tools = TOOLS.filter((t) => !selCat || t.categoryId === selCat)
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
-      <div className="drag flex h-[60px] items-center gap-2 border-b border-line bg-bg-surface px-4 pt-7">
-        {/* 后退 / 前进 */}
-        <div className="flex items-center gap-0.5 no-drag">
-          <button
-            onClick={goBack}
-            disabled={!canGoBack}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-            title="后退 (⌘[)"
-          >
-            <BackIcon size={16} />
-          </button>
-          <button
-            onClick={goForward}
-            disabled={!canGoForward}
-            className="flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
-            title="前进 (⌘])"
-          >
-            <ForwardIcon size={16} />
-          </button>
-        </div>
-        <div className="h-4 w-px bg-line" />
+      <div className="drag flex h-[60px] items-center border-b border-line bg-bg-surface px-4 pt-7">
         <span className="text-page text-ink-primary">RainTool</span>
       </div>
       <div className="flex flex-1 overflow-auto p-6">

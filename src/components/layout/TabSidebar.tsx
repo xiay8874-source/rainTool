@@ -3,7 +3,7 @@ import { useAppStore, type Tab, type TabGroup, type GroupColor } from '@/store/t
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore, snapshotTab, snapshotGroup } from '@/store/favorites'
 import { getTool, TOOLS, CATEGORIES } from '../tools/catalog'
-import { PlusIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon, ExpandIcon } from '../icons'
+import { PlusIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon, ExpandIcon, BackIcon, ForwardIcon } from '../icons'
 
 // 莫兰迪色映射
 const GROUP_COLORS: Record<GroupColor, string> = {
@@ -28,17 +28,22 @@ export function TabSidebar() {
 
 function CollapsedRail({ count, onExpand }: { count: number; onExpand: () => void }) {
   return (
-    <div className="flex h-full w-5 flex-col items-center justify-center border-r border-line bg-bg-surface pt-7">
-      <button
-        onClick={onExpand}
-        className="flex flex-col items-center gap-2 text-ink-tertiary hover:text-ink-secondary no-drag"
-        title="展开标签栏"
-      >
-        <ExpandIcon size={14} />
-        <span className="text-label" style={{ writingMode: 'vertical-rl' }}>
-          标签页 ({count})
-        </span>
-      </button>
+    <div className="flex h-full w-5 flex-col bg-bg-surface">
+      {/* 顶部 60px 留白,与统一标题栏对齐,无竖线 */}
+      <div className="h-[60px] border-b border-line" />
+      {/* 下方内容区才有竖向分隔线 */}
+      <div className="flex flex-1 flex-col items-center justify-center border-r border-line pt-2">
+        <button
+          onClick={onExpand}
+          className="flex flex-col items-center gap-2 text-ink-tertiary hover:text-ink-secondary no-drag"
+          title="展开标签栏"
+        >
+          <ExpandIcon size={14} />
+          <span className="text-label" style={{ writingMode: 'vertical-rl' }}>
+            标签页 ({count})
+          </span>
+        </button>
+      </div>
     </div>
   )
 }
@@ -47,6 +52,10 @@ function ExpandedSidebar() {
   const tabs = useAppStore((s) => s.tabs)
   const groups = useAppStore((s) => s.groups)
   const createGroup = useAppStore((s) => s.createGroup)
+  const canGoBack = useAppStore((s) => s.canGoBack())
+  const canGoForward = useAppStore((s) => s.canGoForward())
+  const goBack = useAppStore((s) => s.goBack)
+  const goForward = useAppStore((s) => s.goForward)
   const toggle = useUIStore((s) => s.toggleTabSidebar)
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -69,11 +78,30 @@ function ExpandedSidebar() {
   return (
     <div className="flex h-full w-56 flex-col border-r border-line bg-bg-surface">
       {/* 顶部:固定 60px 高,与 IconRail/Workspace 顶栏对齐,底 border 形成统一分隔线 */}
-      <div className="flex h-[60px] items-center justify-between border-b border-line px-3 pt-7 drag">
+      <div className="flex h-[60px] items-center gap-1.5 border-b border-line px-3 pt-7 drag">
+        {/* 后退 / 前进 */}
+        <div className="flex items-center gap-0.5 no-drag">
+          <button
+            onClick={goBack}
+            disabled={!canGoBack}
+            className="flex h-6 w-6 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            title="后退 (⌘[)"
+          >
+            <BackIcon size={14} />
+          </button>
+          <button
+            onClick={goForward}
+            disabled={!canGoForward}
+            className="flex h-6 w-6 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            title="前进 (⌘])"
+          >
+            <ForwardIcon size={14} />
+          </button>
+        </div>
         <span className="text-page text-ink-primary">标签页</span>
         <button
           onClick={toggle}
-          className="rounded-btn px-1 text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
+          className="ml-auto rounded-btn px-1 text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
           title="收起"
         >
           <ChevronRightIcon />

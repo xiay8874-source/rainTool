@@ -24,7 +24,7 @@ export function IconRail() {
   }
 
   return (
-    <div className="drag flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface pb-2">
+    <div className="drag flex h-full w-12 flex-col items-center bg-bg-surface">
       {/* 顶部:固定 60px 高,与 TabSidebar/Workspace 顶栏对齐,底 border 形成统一分隔线 */}
       <div className="flex h-[60px] w-full items-center justify-center pt-7">
         <button
@@ -36,51 +36,54 @@ export function IconRail() {
         </button>
       </div>
 
-      <div className="mb-2 h-px w-full bg-line" />
+      {/* 60px 以下内容区:有竖向分隔线,顶部不穿过标题栏 */}
+      <div className="flex flex-1 flex-col items-center border-r border-line pb-2">
+        <div className="mb-2 h-px w-full bg-line" />
 
-      <div className="flex flex-1 flex-col items-center gap-1">
-        {CATEGORIES.map((cat) => {
-          const active = activeCategory === cat.id
-          return (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryClick(cat.id)}
-              className="group relative flex h-8 w-8 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
-              title={cat.name}
-            >
-              <CategoryIcon id={cat.id} />
-              {active && (
-                <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-accent" />
-              )}
-            </button>
-          )
-        })}
+        <div className="flex flex-1 flex-col items-center gap-1">
+          {CATEGORIES.map((cat) => {
+            const active = activeCategory === cat.id
+            return (
+              <button
+                key={cat.id}
+                onClick={() => handleCategoryClick(cat.id)}
+                className="group relative flex h-8 w-8 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
+                title={cat.name}
+              >
+                <CategoryIcon id={cat.id} />
+                {active && (
+                  <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-accent" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="my-1 h-px w-6 bg-line" />
+
+        <button
+          onClick={toggleFavorites}
+          className={`flex h-8 w-8 items-center justify-center rounded-btn hover:bg-bg-hover no-drag ${
+            favoritesOpen ? 'text-accent' : 'text-ink-tertiary hover:text-ink-secondary'
+          }`}
+          title="收藏夹 (⌘B)"
+        >
+          <StarIcon />
+        </button>
+
+        <button
+          onClick={toggleSettings}
+          className={`relative flex h-8 w-8 items-center justify-center rounded-btn hover:bg-bg-hover no-drag ${
+            settingsOpen ? 'text-accent' : 'text-ink-tertiary hover:text-ink-secondary'
+          }`}
+          title="设置 / 检查更新"
+        >
+          <SettingsIcon />
+          {hasUpdate && (
+            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-danger" />
+          )}
+        </button>
       </div>
-
-      <div className="my-1 h-px w-6 bg-line" />
-
-      <button
-        onClick={toggleFavorites}
-        className={`flex h-8 w-8 items-center justify-center rounded-btn hover:bg-bg-hover no-drag ${
-          favoritesOpen ? 'text-accent' : 'text-ink-tertiary hover:text-ink-secondary'
-        }`}
-        title="收藏夹 (⌘B)"
-      >
-        <StarIcon />
-      </button>
-
-      <button
-        onClick={toggleSettings}
-        className={`relative flex h-8 w-8 items-center justify-center rounded-btn hover:bg-bg-hover no-drag ${
-          settingsOpen ? 'text-accent' : 'text-ink-tertiary hover:text-ink-secondary'
-        }`}
-        title="设置 / 检查更新"
-      >
-        <SettingsIcon />
-        {hasUpdate && (
-          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-danger" />
-        )}
-      </button>
     </div>
   )
 }
