@@ -1,72 +1,182 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ToolProps } from './shared'
 import { ToolPane, CopyBtn, ActionBtn } from './shared'
 
+// 常用时区(含 UTC 与本地)
+const TIMEZONES = [
+  { id: 'local', label: '本地', tz: undefined as string | undefined },
+  { id: 'UTC', label: 'UTC', tz: 'UTC' },
+  { id: 'Asia/Shanghai', label: '上海 (CST)', tz: 'Asia/Shanghai' },
+  { id: 'Asia/Tokyo', label: '东京 (JST)', tz: 'Asia/Tokyo' },
+  { id: 'Asia/Singapore', label: '新加坡 (SGT)', tz: 'Asia/Singapore' },
+  { id: 'Asia/Kolkata', label: '孟买 (IST)', tz: 'Asia/Kolkata' },
+  { id: 'Europe/London', label: '伦敦 (GMT/BST)', tz: 'Europe/London' },
+  { id: 'Europe/Berlin', label: '柏林 (CET)', tz: 'Europe/Berlin' },
+  { id: 'America/New_York', label: '纽约 (EST/EDT)', tz: 'America/New_York' },
+  { id: 'America/Los_Angeles', label: '洛杉矶 (PST/PDT)', tz: 'America/Los_Angeles' },
+]
+
+const fmt2 = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * 把时间戳(ms)按指定时区格式化为 YYYY-MM-DD HH:mm:ss
+ * 用 Intl.DateTimeFormat 取各分量(支持任意 IANA 时区)。
+ */
+function formatInTz(ms: number, tz?: string): string {
+  const d = new Date(ms)
+  // en-CA 产出 YYYY-MM-DD 格式的日期部分,便于拼装
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  // hour12:false 在某些环境可能产出 "24",修正为 "00"
+  let h = get('hour')
+  if (h === '24') h = '00'
+  return `${get('year')}-${get('month')}-${get('day')} ${h}:${get('minute')}:${get('second')}`
+}
+
+/**
+ * 计算指定时区相对 UTC 的偏移(分钟),用于显示 +XX:XX 及解析补偿。
+ * 通过对比同一时刻在目标时区与 UTC 下的格式化结果得出。
+ */
+function tzOffsetMinutes(ms: number, tz?: string): number {
+  const d = new Date(ms)
+  if (!tz) return -d.getTimezoneOffset() // 本地:getTimezoneOffset 返回 UTC-本地,取反
+  // 目标时区的"墙上时间"当作 UTC 解析,减去真实 UTC 墙上时间
+  const tzParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const g = (t: string) => Number(partsVal(tzParts, t))
+  let hh = g('hour'); if (hh === 24) hh = 0
+  const tzAsUtc = Date.UTC(g('year'), g('month') - 1, g('day'), hh, g('minute'), g('second'))
+  const realUtc = Math.floor(d.getTime() / 1000) * 1000
+  return Math.round((tzAsUtc - realUtc) / 60000)
+}
+
+function partsVal(parts: Intl.DateTimeFormatPart[], type: string): string {
+  return parts.find((p) => p.type === type)?.value ?? ''
+}
+
+function offsetLabel(min: number): string {
+  const sign = min >= 0 ? '+' : '-'
+  const abs = Math.abs(min)
+  return `UTC${sign}${fmt2(Math.floor(abs / 60))}:${fmt2(abs % 60)}`
+}
+
 export default function Timestamp({ input, onInput }: ToolProps) {
   const [now, setNow] = useState(Date.now())
+  const [tzId, setTzId] = useState('local')
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
 
-  // 输入是时间戳 → 日期
-  // 输入是日期字符串 → 时间戳
-  let fromTs = ''
-  let fromDate = ''
-  const trimmed = input.trim()
-  if (trimmed) {
+  const tz = useMemo(
+    () => TIMEZONES.find((t) => t.id === tzId) ?? TIMEZONES[0],
+    [tzId],
+  )
+
+  const offset = useMemo(() => tzOffsetMinutes(now, tz.tz), [now, tz.tz])
+
+  // 双向解析:输入时间戳 → 日期;输入日期字符串 → 时间戳(按选定时区解析)
+  const { fromTs, fromDate, parseNote } = useMemo(() => {
+    let fromTs = ''
+    let fromDate = ''
+    let parseNote = ''
+    const trimmed = input.trim()
+    if (!trimmed) return { fromTs, fromDate, parseNote }
+
     const asNum = Number(trimmed)
-    if (!isNaN(asNum)) {
-      // 判断秒/毫秒
+    if (!isNaN(asNum) && trimmed !== '') {
+      // 数字 → 时间戳(秒/毫秒自动判断)
       const ms = trimmed.length <= 10 ? asNum * 1000 : asNum
       const d = new Date(ms)
-      if (!isNaN(d.getTime())) fromTs = format(d)
+      if (!isNaN(d.getTime())) {
+        fromTs = formatInTz(ms, tz.tz)
+        parseNote = `时间戳 ${trimmed.length <= 10 ? '(秒)' : '(毫秒)'} → ${tz.label}`
+      }
     } else {
-      const d = new Date(trimmed)
-      if (!isNaN(d.getTime())) fromDate = String(d.getTime())
+      // 日期字符串 → 时间戳:按选定时区解析,避免本地/UTC 歧义
+      const d = parseDateInTz(trimmed, tz.tz)
+      if (d && !isNaN(d.getTime())) {
+        fromDate = String(d.getTime())
+        parseNote = `${tz.label} 日期 → 时间戳`
+      } else {
+        parseNote = '无法解析(支持 YYYY-MM-DD HH:mm:ss 或 ISO 8601)'
+      }
     }
-  }
-
-  const fmt = (n: number) => String(n).padStart(2, '0')
-  function format(d: Date) {
-    return `${d.getFullYear()}-${fmt(d.getMonth() + 1)}-${fmt(d.getDate())} ${fmt(d.getHours())}:${fmt(d.getMinutes())}:${fmt(d.getSeconds())}`
-  }
+    return { fromTs, fromDate, parseNote }
+  }, [input, tz])
 
   const setNowInput = () => onInput(String(Math.floor(now / 1000)))
+
+  // 当前时间在选定时区下的显示
+  const nowFormatted = formatInTz(now, tz.tz)
 
   return (
     <ToolPane title="时间戳 ⇄ 日期">
       <div className="flex h-full flex-col gap-4">
-        <div className="flex items-center gap-3 rounded-card border border-line bg-bg-surface p-3">
-          <span className="text-caption text-ink-tertiary">当前时间戳</span>
-          <span className="font-mono text-code text-ink-primary">{Math.floor(now / 1000)}</span>
-          <span className="text-ink-tertiary">/</span>
-          <span className="font-mono text-code text-ink-secondary">{now}</span>
-          <div className="ml-auto flex gap-1.5">
-            <ActionBtn onClick={() => navigator.clipboard?.writeText(String(Math.floor(now / 1000)))}>
-              复制秒
-            </ActionBtn>
-            <ActionBtn onClick={() => navigator.clipboard?.writeText(String(now))}>复制毫秒</ActionBtn>
-            <ActionBtn onClick={setNowInput} primary>填入</ActionBtn>
+        {/* 当前时间 + 时区 */}
+        <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-surface p-3">
+          <div className="flex items-center gap-3">
+            <span className="text-caption text-ink-tertiary">当前时间戳</span>
+            <span className="font-mono text-code text-ink-primary">{Math.floor(now / 1000)}</span>
+            <span className="text-ink-tertiary">/</span>
+            <span className="font-mono text-code text-ink-secondary">{now}</span>
+            <div className="ml-auto flex gap-1.5">
+              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(Math.floor(now / 1000)))}>
+                复制秒
+              </ActionBtn>
+              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(now))}>复制毫秒</ActionBtn>
+              <ActionBtn onClick={setNowInput} primary>填入</ActionBtn>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-caption text-ink-tertiary">当前时间</span>
+            <span className="font-mono text-code text-ink-primary">{nowFormatted}</span>
+            <span className="text-label text-ink-tertiary">{tz.label} · {offsetLabel(offset)}</span>
+          </div>
+          {/* 时区选择 */}
+          <div className="flex items-center gap-2">
+            <span className="text-caption text-ink-tertiary">时区</span>
+            <select
+              value={tzId}
+              onChange={(e) => setTzId(e.target.value)}
+              className="rounded-btn border border-line bg-bg-surface px-2 py-1 text-caption text-ink-primary outline-none focus:border-accent"
+            >
+              {TIMEZONES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
+        {/* 双向转换 */}
         <div className="flex flex-1 flex-col gap-2">
           <textarea
             value={input}
             onChange={(e) => onInput(e.target.value)}
-            placeholder="输入时间戳(秒或毫秒)或日期字符串(如 2026-07-06 12:00:00)"
+            placeholder="输入时间戳(秒或毫秒)或日期字符串(如 2026-07-06 12:00:00),按上方时区解析"
             spellCheck={false}
             className="h-24 resize-none rounded-card border border-line bg-bg-surface p-3 font-mono text-code text-ink-primary outline-none focus:border-accent"
           />
+          {parseNote && (
+            <div className="text-label text-ink-tertiary">{parseNote}</div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-card border border-line bg-bg-subtle p-3">
-              <div className="mb-1 text-label text-ink-tertiary">作为时间戳 → 日期</div>
+              <div className="mb-1 text-label text-ink-tertiary">时间戳 → 日期 ({tz.label})</div>
               <div className="font-mono text-code text-ink-primary">{fromTs || '—'}</div>
             </div>
             <div className="rounded-card border border-line bg-bg-subtle p-3">
-              <div className="mb-1 text-label text-ink-tertiary">作为日期 → 时间戳</div>
+              <div className="mb-1 text-label text-ink-tertiary">日期 ({tz.label}) → 时间戳</div>
               <div className="font-mono text-code text-ink-primary">{fromDate || '—'}</div>
             </div>
           </div>
@@ -78,4 +188,34 @@ export default function Timestamp({ input, onInput }: ToolProps) {
       </div>
     </ToolPane>
   )
+}
+
+/**
+ * 按指定时区解析日期字符串 → Date(UTC ms)。
+ * 支持格式:YYYY-MM-DD HH:mm:ss、YYYY-MM-DDTHH:mm:ss、YYYY/MM/DD HH:mm:ss 等。
+ * 思路:把字符串拆成各分量,用 Date.UTC 构造"当作该时区墙上时间"的 UTC ms,
+ * 再减去该时区偏移,得到真实的 UTC ms。
+ */
+function parseDateInTz(s: string, tz?: string): Date | null {
+  // 标准化:替换 / 为 -,替换 T 为空格
+  const normalized = s.replace(/\//g, '-').replace(/T/g, ' ').trim()
+  // 匹配 YYYY-MM-DD[ HH:mm[:ss]]
+  const m = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ ](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  if (!m) {
+    // 兜底:交给原生 Date 解析(ISO 带Z等)
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? null : d
+  }
+  const [, y, mo, d1, h, mi, se] = m
+  const year = Number(y)
+  const month = Number(mo) - 1
+  const day = Number(d1)
+  const hour = h ? Number(h) : 0
+  const minute = mi ? Number(mi) : 0
+  const second = se ? Number(se) : 0
+  // "墙上时间"当作 UTC 构造
+  const wallAsUtc = Date.UTC(year, month, day, hour, minute, second)
+  // 计算该时区在此时刻的偏移,补偿得到真实 UTC ms
+  const offset = tzOffsetMinutes(wallAsUtc, tz)
+  return new Date(wallAsUtc - offset * 60000)
 }

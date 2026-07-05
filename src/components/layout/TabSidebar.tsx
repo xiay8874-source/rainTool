@@ -28,10 +28,10 @@ export function TabSidebar() {
 
 function CollapsedRail({ count, onExpand }: { count: number; onExpand: () => void }) {
   return (
-    <div className="flex h-full w-5 flex-col items-center justify-center border-r border-line bg-bg-surface">
+    <div className="flex h-full w-5 flex-col items-center justify-center border-r border-line bg-bg-surface pt-9">
       <button
         onClick={onExpand}
-        className="flex flex-col items-center gap-2 text-ink-tertiary hover:text-ink-secondary"
+        className="flex flex-col items-center gap-2 text-ink-tertiary hover:text-ink-secondary no-drag"
         title="展开标签栏"
       >
         <ExpandIcon size={14} />
@@ -69,11 +69,11 @@ function ExpandedSidebar() {
   return (
     <div className="flex h-full w-56 flex-col border-r border-line bg-bg-surface">
       {/* 顶部 */}
-      <div className="flex items-center justify-between px-3 py-2">
+      <div className="flex items-center justify-between px-3 pt-9 pb-2 drag">
         <span className="text-page text-ink-primary">标签页</span>
         <button
           onClick={toggle}
-          className="rounded-btn px-1 text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary"
+          className="rounded-btn px-1 text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
           title="收起"
         >
           <ChevronRightIcon />

@@ -3,6 +3,7 @@ import { IconRail } from './components/layout/IconRail'
 import { TabSidebar } from './components/layout/TabSidebar'
 import { Workspace } from './components/layout/Workspace'
 import { FavoritesFloat } from './components/favorites/FavoritesFloat'
+import { SettingsFloat } from './components/settings/SettingsFloat'
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore } from '@/store/favorites'
 import { useAppStore } from '@/store/tabs'
@@ -11,6 +12,37 @@ export default function App() {
   const toggleFavorites = useUIStore((s) => s.toggleFavorites)
   const hydrateFavorites = useFavoritesStore((s) => s.hydrate)
   const hydrateWorkspace = useAppStore((s) => s.hydrate)
+  const setHasUpdate = useUIStore((s) => s.setHasUpdate)
+
+  // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
+  useEffect(() => {
+    hydrateWorkspace()
+    hydrateFavorites()
+  }, [hydrateWorkspace, hydrateFavorites])
+
+  // 启动时静默检查更新(24h 节流),有更新则在设置图标显示红点
+  useEffect(() => {
+    const ONE_DAY = 24 * 60 * 60 * 1000
+    ;(async () => {
+      try {
+        const w = window as unknown as {
+          raintool?: {
+            getLastCheck: () => Promise<number | undefined>
+            setLastCheck: (ts: number) => Promise<void>
+            checkForUpdates: () => Promise<{ hasUpdate: boolean; current?: string; error?: string }>
+          }
+        }
+        if (!w.raintool) return
+        const last = await w.raintool.getLastCheck()
+        if (last && Date.now() - last < ONE_DAY) return // 节流:24h 内不重复检查
+        const result = await w.raintool.checkForUpdates()
+        await w.raintool.setLastCheck(Date.now())
+        if (result.hasUpdate) setHasUpdate(true)
+      } catch {
+        /* 静默失败,不打扰用户 */
+      }
+    })()
+  }, [setHasUpdate])
 
   // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
   useEffect(() => {
@@ -56,6 +88,7 @@ export default function App() {
       <div className="relative flex-1 overflow-hidden">
         <Workspace />
         <FavoritesFloat />
+        <SettingsFloat />
       </div>
     </div>
   )

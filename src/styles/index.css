@@ -49,4 +49,13 @@
     background: rgba(59, 111, 224, 0.25);
     color: transparent;
   }
+
+  /* 自定义标题栏:隐藏式 titleBar 下,顶部空白区可拖拽移动窗口,
+     按钮区域用 no-drag 覆盖以保证可点击 */
+  .drag {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
 }
