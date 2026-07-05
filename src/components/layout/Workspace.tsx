@@ -52,15 +52,15 @@ export function Workspace() {
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
-      {/* 工具栏 */}
-      <div className="flex items-center gap-2 border-b border-line bg-bg-surface px-4 py-2">
+      {/* 工具栏:顶部留白对齐交通灯,可拖拽移动窗口 */}
+      <div className="drag flex items-center gap-2 border-b border-line bg-bg-surface px-4 pt-7 pb-2">
         <span className="text-page text-ink-primary">{toolDef?.name ?? activeTab.toolId}</span>
         {activeTab.groupId && (
           <span className="text-caption text-ink-tertiary">
             {groups.find((g) => g.id === activeTab.groupId)?.name ?? ''}
           </span>
         )}
-        <div className="ml-auto flex gap-1.5">
+        <div className="ml-auto flex gap-1.5 no-drag">
           <ToolBtn onClick={() => duplicateTab(activeTab.id)}>
             复制此页
           </ToolBtn>
@@ -131,7 +131,7 @@ function EmptyState({
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
-      <div className="border-b border-line bg-bg-surface px-4 py-2">
+      <div className="drag flex items-center border-b border-line bg-bg-surface px-4 pt-7 pb-2">
         <span className="text-page text-ink-primary">RainTool</span>
       </div>
       <div className="flex flex-1 overflow-auto p-6">

@@ -28,7 +28,7 @@ export function TabSidebar() {
 
 function CollapsedRail({ count, onExpand }: { count: number; onExpand: () => void }) {
   return (
-    <div className="flex h-full w-5 flex-col items-center justify-center border-r border-line bg-bg-surface pt-9">
+    <div className="flex h-full w-5 flex-col items-center justify-center border-r border-line bg-bg-surface pt-7">
       <button
         onClick={onExpand}
         className="flex flex-col items-center gap-2 text-ink-tertiary hover:text-ink-secondary no-drag"
@@ -69,7 +69,7 @@ function ExpandedSidebar() {
   return (
     <div className="flex h-full w-56 flex-col border-r border-line bg-bg-surface">
       {/* 顶部 */}
-      <div className="flex items-center justify-between px-3 pt-9 pb-2 drag">
+      <div className="flex items-center justify-between px-3 pt-7 pb-2 drag">
         <span className="text-page text-ink-primary">标签页</span>
         <button
           onClick={toggle}

@@ -92,9 +92,9 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#fafafa',
     titleBarStyle: 'hiddenInset',
-    // 把交通灯(关闭/最小化/最大化)固定到左上角安全位置,
-    // 避免与 IconRail 顶部按钮重叠
-    trafficLightPosition: { x: 16, y: 18 },
+    // 交通灯(关闭/最小化/最大化):嵌入统一顶栏,与三个面板顶部对齐
+    // 三个圆点直径 12px,y=14 → 圆心 y=20,底部 y=26,留 2px 余量到 pt-7(28px) 内容区
+    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

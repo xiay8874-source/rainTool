@@ -24,7 +24,7 @@ export function IconRail() {
   }
 
   return (
-    <div className="drag flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface pt-9 pb-2">
+    <div className="drag flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface pt-7 pb-2">
       <button
         onClick={toggleTabSidebar}
         className="mb-2 flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
@@ -33,7 +33,7 @@ export function IconRail() {
         {tabSidebarCollapsed ? <ExpandIcon /> : <CollapseIcon />}
       </button>
 
-      <div className="my-1 h-px w-6 bg-line" />
+      <div className="mb-1 h-px w-6 bg-line" />
 
       <div className="flex flex-1 flex-col items-center gap-1">
         {CATEGORIES.map((cat) => {
