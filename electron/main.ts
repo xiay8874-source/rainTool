@@ -83,6 +83,8 @@ ipcMain.handle('update:check', () => checkForUpdates())
 ipcMain.handle('update:open', (_e, url: string) => shell.openExternal(url))
 ipcMain.handle('update:getLastCheck', () => store.get('update.lastCheck'))
 ipcMain.handle('update:setLastCheck', (_e, ts: number) => store.set('update.lastCheck', ts))
+// 暴露真实版本号给渲染进程(打包后由 electron 读取 package.json,不再硬编码)
+ipcMain.handle('app:getVersion', () => app.getVersion())
 
 function createWindow() {
   mainWindow = new BrowserWindow({

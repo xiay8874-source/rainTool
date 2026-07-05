@@ -1,9 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUIStore } from '@/store/ui'
 import { CloseIcon, SettingsIcon } from '../icons'
-
-// 当前版本(与 package.json 同步,打包后由 electron 读取)
-const APP_VERSION = '0.1.0'
 
 type CheckState =
   | { status: 'idle' }
@@ -17,6 +14,13 @@ export function SettingsFloat() {
   const setOpen = useUIStore((s) => s.setSettingsOpen)
   const setHasUpdate = useUIStore((s) => s.setHasUpdate)
   const [state, setState] = useState<CheckState>({ status: 'idle' })
+  // 真实版本号:启动时从主进程读取(app.getVersion()),不再硬编码
+  const [appVersion, setAppVersion] = useState('—')
+
+  useEffect(() => {
+    const w = window as unknown as { raintool?: { getVersion: () => Promise<string> } }
+    w.raintool?.getVersion().then(setAppVersion).catch(() => {})
+  }, [])
 
   if (!open) return null
 
@@ -52,7 +56,7 @@ export function SettingsFloat() {
       } else if (result.error) {
         setState({ status: 'error', message: result.error })
       } else {
-        setState({ status: 'up-to-date', current: result.current ?? APP_VERSION })
+        setState({ status: 'up-to-date', current: result.current ?? appVersion })
         setHasUpdate(false)
       }
     } catch (e) {
@@ -88,7 +92,7 @@ export function SettingsFloat() {
           {/* 关于 */}
           <div className="flex items-center justify-between">
             <span className="text-caption text-ink-tertiary">当前版本</span>
-            <span className="font-mono text-code text-ink-primary">v{APP_VERSION}</span>
+            <span className="font-mono text-code text-ink-primary">v{appVersion}</span>
           </div>
 
           <div className="h-px bg-line" />

@@ -12,6 +12,9 @@ const api = {
   getLastCheck: () => ipcRenderer.invoke('update:getLastCheck'),
   setLastCheck: (ts: number) => ipcRenderer.invoke('update:setLastCheck', ts),
 
+  // 应用版本号(来自 app.getVersion(),打包后读 package.json)
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
   // 鼠标后退/前进侧键:订阅方向事件(-1 后退 / 1 前进)
   onMouseNav: (cb: (direction: number) => void) => {
     const listener = (_e: unknown, direction: number) => cb(direction)
