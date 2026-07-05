@@ -45,6 +45,15 @@ interface AppState {
   groups: TabGroup[]
   activeTabId: string | null
 
+  // 标签导航历史(浏览器式前进/后退)
+  // history 存 tab id(或 null 表示 EmptyState),historyIndex 指向当前位置
+  history: (string | null)[]
+  historyIndex: number
+  canGoBack: () => boolean
+  canGoForward: () => boolean
+  goBack: () => void
+  goForward: () => void
+
   // 标签操作
   openTab: (toolId: string, title?: string, groupId?: string | null) => string
   closeTab: (id: string) => void
@@ -75,58 +84,124 @@ interface AppState {
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
 
-export const useAppStore = create<AppState>((set, get) => ({
-  tabs: [],
-  groups: [],
-  activeTabId: null,
-
-  openTab: (toolId, title, groupId = null) => {
-    const id = uid()
-    const tab: Tab = {
-      id,
-      toolId,
-      title: title ?? '',
-      groupId,
-      state: { input: '' },
-      createdAt: Date.now(),
-    }
-    set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
-    return id
-  },
-
-  closeTab: (id) =>
+export const useAppStore = create<AppState>((set, get) => {
+  // 导航历史内部辅助:记录一次"前进栈被截断"的跳转
+  // isNav=true 表示是 goBack/goForward 触发的切换,只移动指针不新建条目
+  const pushHistory = (id: string | null, isNav = false) => {
     set((s) => {
-      const tabs = s.tabs.filter((t) => t.id !== id)
-      const activeTabId =
-        s.activeTabId === id ? (tabs.length ? tabs[tabs.length - 1].id : null) : s.activeTabId
-      return { tabs, activeTabId }
-    }),
-
-  renameTab: (id, title) =>
-    set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) })),
-
-  duplicateTab: (id) => {
-    const src = get().tabs.find((t) => t.id === id)
-    if (!src) return id
-    const newId = uid()
-    const copy: Tab = {
-      ...src,
-      id: newId,
-      title: src.title + ' 副本',
-      state: { ...src.state },
-      createdAt: Date.now(),
-    }
-    // 插入到原标签后面
-    set((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === id)
-      const tabs = [...s.tabs]
-      tabs.splice(idx + 1, 0, copy)
-      return { tabs, activeTabId: newId }
+      if (isNav) return {} // goBack/goForward 自行处理指针
+      // 截断当前位置之后的前进栈,再追加新条目
+      const truncated = s.history.slice(0, s.historyIndex + 1)
+      // 跳过连续重复(同一标签连续点击不产生冗余条目)
+      if (truncated[truncated.length - 1] === id) return {}
+      truncated.push(id)
+      return { history: truncated, historyIndex: truncated.length - 1 }
     })
-    return newId
-  },
+  }
 
-  setActiveTab: (id) => set({ activeTabId: id }),
+  return {
+    tabs: [],
+    groups: [],
+    activeTabId: null,
+    history: [null],
+    historyIndex: 0,
+
+    canGoBack: () => get().historyIndex > 0,
+    canGoForward: () => get().historyIndex < get().history.length - 1,
+
+    goBack: () => {
+      const { history, historyIndex, tabs } = get()
+      if (historyIndex <= 0) return
+      const newIdx = historyIndex - 1
+      let target = history[newIdx]
+      // 已关闭的标签从历史中清除,跳过
+      if (target !== null && !tabs.some((t) => t.id === target)) {
+        set({ history: history.filter((h) => h !== target), historyIndex: newIdx })
+        // 递归重试(过滤后索引可能变化)
+        get().goBack()
+        return
+      }
+      set({ activeTabId: target, historyIndex: newIdx })
+    },
+
+    goForward: () => {
+      const { history, historyIndex, tabs } = get()
+      if (historyIndex >= history.length - 1) return
+      const newIdx = historyIndex + 1
+      let target = history[newIdx]
+      if (target !== null && !tabs.some((t) => t.id === target)) {
+        set({ history: history.filter((h) => h !== target), historyIndex: newIdx - 1 })
+        get().goForward()
+        return
+      }
+      set({ activeTabId: target, historyIndex: newIdx })
+    },
+
+    openTab: (toolId, title, groupId = null) => {
+      const id = uid()
+      const tab: Tab = {
+        id,
+        toolId,
+        title: title ?? '',
+        groupId,
+        state: { input: '' },
+        createdAt: Date.now(),
+      }
+      set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
+      pushHistory(id)
+      return id
+    },
+
+    closeTab: (id) => {
+      set((s) => {
+        const tabs = s.tabs.filter((t) => t.id !== id)
+        const wasActive = s.activeTabId === id
+        const activeTabId = wasActive
+          ? tabs.length
+            ? tabs[tabs.length - 1].id
+            : null
+          : s.activeTabId
+        // 从历史栈中移除已关闭标签的引用,重算 index
+        const history = s.history.filter((h) => h !== id)
+        const historyIndex = Math.min(s.historyIndex, history.length - 1)
+        return { tabs, activeTabId, history, historyIndex }
+      })
+      // 若关的是活动标签,补录新的活动标签到历史
+      const s = get()
+      if (s.activeTabId !== id) pushHistory(s.activeTabId)
+    },
+
+    renameTab: (id, title) =>
+      set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) })),
+
+    duplicateTab: (id) => {
+      const src = get().tabs.find((t) => t.id === id)
+      if (!src) return id
+      const newId = uid()
+      const copy: Tab = {
+        ...src,
+        id: newId,
+        title: src.title + ' 副本',
+        state: { ...src.state },
+        createdAt: Date.now(),
+      }
+      // 插入到原标签后面
+      set((s) => {
+        const idx = s.tabs.findIndex((t) => t.id === id)
+        const tabs = [...s.tabs]
+        tabs.splice(idx + 1, 0, copy)
+        return { tabs, activeTabId: newId }
+      })
+      pushHistory(newId)
+      return newId
+    },
+
+    setActiveTab: (id) => {
+      const cur = get().activeTabId
+      if (cur === id) return
+      set({ activeTabId: id })
+      pushHistory(id)
+    },
 
   setTabInput: (id, input) =>
     set((s) => ({
@@ -193,17 +268,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       tabs: s.tabs.map((t) => (t.groupId === id ? { ...t, groupId: null } : t)),
     })),
 
-  closeGroupTabs: (id) =>
+  closeGroupTabs: (id) => {
+    const tabIds = get().tabs.filter((t) => t.groupId === id).map((t) => t.id)
     set((s) => {
-      const tabIds = s.tabs.filter((t) => t.groupId === id).map((t) => t.id)
       const tabs = s.tabs.filter((t) => t.groupId !== id)
       const activeTabId = tabIds.includes(s.activeTabId ?? '')
         ? tabs.length
           ? tabs[tabs.length - 1].id
           : null
         : s.activeTabId
-      return { tabs, activeTabId }
-    }),
+      // 从历史中移除被关闭的标签
+      const history = s.history.filter((h) => h === null || !tabIds.includes(h))
+      const historyIndex = Math.min(s.historyIndex, history.length - 1)
+      return { tabs, activeTabId, history, historyIndex }
+    })
+    const s = get()
+    if (tabIds.includes(s.activeTabId ?? '')) pushHistory(s.activeTabId)
+  },
 
   persist: () => {
     const { tabs, groups, activeTabId } = get()
@@ -231,21 +312,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         data = s ? JSON.parse(s) : null
       }
       if (data && (data.tabs?.length || data.groups?.length)) {
+        const activeTabId =
+          data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId)
+            ? data.activeTabId
+            : (data.tabs?.[0]?.id ?? null)
         set({
           tabs: data.tabs ?? [],
           groups: data.groups ?? [],
-          // 活动标签若不存在则置空
-          activeTabId:
-            data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId)
-              ? data.activeTabId
-              : (data.tabs?.[0]?.id ?? null),
+          activeTabId,
+          // 恢复后历史从当前活动标签开始
+          history: [activeTabId],
+          historyIndex: 0,
         })
       }
     } catch {
       /* ignore */
     }
   },
-}))
+  }
+})
 
 // 自动持久化:任何状态变化都触发防抖保存(300ms)
 let persistTimer: ReturnType<typeof setTimeout> | null = null

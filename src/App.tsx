@@ -60,10 +60,26 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', flush)
   }, [])
 
-  // ⌘B / Ctrl+B 唤起收藏夹;⌘F / Ctrl+F 派发查找事件(由当前可见工具的 FindBar 响应)
+  // ⌘B 收藏夹;⌘F 查找;⌘[/⌘] 或 Alt+←/→ 标签前进/后退
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
+      // ⌘[ 后退 / ⌘] 前进
+      if (mod && (e.key === '[' || e.key === ']')) {
+        e.preventDefault()
+        const store = useAppStore.getState()
+        if (e.key === '[') store.goBack()
+        else store.goForward()
+        return
+      }
+      // Alt+← 后退 / Alt+→ 前进(鼠标快捷键习惯)
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault()
+        const store = useAppStore.getState()
+        if (e.key === 'ArrowLeft') store.goBack()
+        else store.goForward()
+        return
+      }
       if (!mod) return
       const k = e.key.toLowerCase()
       if (k === 'b') {
@@ -80,6 +96,19 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [toggleFavorites])
+
+  // 鼠标后退/前进侧键(macOS):订阅主进程的 nav:mouse 事件
+  useEffect(() => {
+    const w = window as unknown as {
+      raintool?: { onMouseNav?: (cb: (direction: number) => void) => (() => void) | undefined }
+    }
+    const unsub = w.raintool?.onMouseNav?.((direction) => {
+      const store = useAppStore.getState()
+      if (direction < 0) store.goBack()
+      else store.goForward()
+    })
+    return () => unsub?.()
+  }, [])
 
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-bg-app">

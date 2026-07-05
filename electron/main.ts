@@ -142,3 +142,14 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+// 鼠标后退/前进侧键(macOS):转发给渲染进程做标签导航
+// 注:'browser-back-forward' 事件存在于运行时但未在 electron 33 类型定义中
+;(app as unknown as {
+  on: (event: 'browser-back-forward', listener: (e: Electron.Event, direction: number) => void) => void
+}).on('browser-back-forward', (_e, direction) => {
+  // direction: -1 = 后退, 1 = 前进
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('nav:mouse', direction)
+  }
+})

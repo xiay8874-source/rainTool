@@ -146,3 +146,19 @@ export function SettingsIcon({ size = 16, className }: IconProps) {
     </svg>
   )
 }
+
+export function BackIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M15 6l-6 6 6 6" />
+    </svg>
+  )
+}
+
+export function ForwardIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
