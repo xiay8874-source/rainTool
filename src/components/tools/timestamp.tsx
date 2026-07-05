@@ -67,129 +67,6 @@ function offsetLabel(min: number): string {
   return `UTC${sign}${fmt2(Math.floor(abs / 60))}:${fmt2(abs % 60)}`
 }
 
-export default function Timestamp({ input, onInput }: ToolProps) {
-  const [now, setNow] = useState(Date.now())
-  const [tzId, setTzId] = useState('local')
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  const tz = useMemo(
-    () => TIMEZONES.find((t) => t.id === tzId) ?? TIMEZONES[0],
-    [tzId],
-  )
-
-  const offset = useMemo(() => tzOffsetMinutes(now, tz.tz), [now, tz.tz])
-
-  // 双向解析:输入时间戳 → 日期;输入日期字符串 → 时间戳(按选定时区解析)
-  const { fromTs, fromDate, parseNote } = useMemo(() => {
-    let fromTs = ''
-    let fromDate = ''
-    let parseNote = ''
-    const trimmed = input.trim()
-    if (!trimmed) return { fromTs, fromDate, parseNote }
-
-    const asNum = Number(trimmed)
-    if (!isNaN(asNum) && trimmed !== '') {
-      // 数字 → 时间戳(秒/毫秒自动判断)
-      const ms = trimmed.length <= 10 ? asNum * 1000 : asNum
-      const d = new Date(ms)
-      if (!isNaN(d.getTime())) {
-        fromTs = formatInTz(ms, tz.tz)
-        parseNote = `时间戳 ${trimmed.length <= 10 ? '(秒)' : '(毫秒)'} → ${tz.label}`
-      }
-    } else {
-      // 日期字符串 → 时间戳:按选定时区解析,避免本地/UTC 歧义
-      const d = parseDateInTz(trimmed, tz.tz)
-      if (d && !isNaN(d.getTime())) {
-        fromDate = String(d.getTime())
-        parseNote = `${tz.label} 日期 → 时间戳`
-      } else {
-        parseNote = '无法解析(支持 YYYY-MM-DD HH:mm:ss 或 ISO 8601)'
-      }
-    }
-    return { fromTs, fromDate, parseNote }
-  }, [input, tz])
-
-  const setNowInput = () => onInput(String(Math.floor(now / 1000)))
-
-  // 当前时间在选定时区下的显示
-  const nowFormatted = formatInTz(now, tz.tz)
-
-  return (
-    <ToolPane title="时间戳 ⇄ 日期">
-      <div className="flex h-full flex-col gap-4">
-        {/* 当前时间 + 时区 */}
-        <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-surface p-3">
-          <div className="flex items-center gap-3">
-            <span className="text-caption text-ink-tertiary">当前时间戳</span>
-            <span className="font-mono text-code text-ink-primary">{Math.floor(now / 1000)}</span>
-            <span className="text-ink-tertiary">/</span>
-            <span className="font-mono text-code text-ink-secondary">{now}</span>
-            <div className="ml-auto flex gap-1.5">
-              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(Math.floor(now / 1000)))}>
-                复制秒
-              </ActionBtn>
-              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(now))}>复制毫秒</ActionBtn>
-              <ActionBtn onClick={setNowInput} primary>填入</ActionBtn>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-caption text-ink-tertiary">当前时间</span>
-            <span className="font-mono text-code text-ink-primary">{nowFormatted}</span>
-            <span className="text-label text-ink-tertiary">{tz.label} · {offsetLabel(offset)}</span>
-          </div>
-          {/* 时区选择 */}
-          <div className="flex items-center gap-2">
-            <span className="text-caption text-ink-tertiary">时区</span>
-            <select
-              value={tzId}
-              onChange={(e) => setTzId(e.target.value)}
-              className="rounded-btn border border-line bg-bg-surface px-2 py-1 text-caption text-ink-primary outline-none focus:border-accent"
-            >
-              {TIMEZONES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* 双向转换 */}
-        <div className="flex flex-1 flex-col gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => onInput(e.target.value)}
-            placeholder="输入时间戳(秒或毫秒)或日期字符串(如 2026-07-06 12:00:00),按上方时区解析"
-            spellCheck={false}
-            className="h-24 resize-none rounded-card border border-line bg-bg-surface p-3 font-mono text-code text-ink-primary outline-none focus:border-accent"
-          />
-          {parseNote && (
-            <div className="text-label text-ink-tertiary">{parseNote}</div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-card border border-line bg-bg-subtle p-3">
-              <div className="mb-1 text-label text-ink-tertiary">时间戳 → 日期 ({tz.label})</div>
-              <div className="font-mono text-code text-ink-primary">{fromTs || '—'}</div>
-            </div>
-            <div className="rounded-card border border-line bg-bg-subtle p-3">
-              <div className="mb-1 text-label text-ink-tertiary">日期 ({tz.label}) → 时间戳</div>
-              <div className="font-mono text-code text-ink-primary">{fromDate || '—'}</div>
-            </div>
-          </div>
-          <div className="flex gap-1.5">
-            <CopyBtn text={fromTs} label="复制日期" />
-            <CopyBtn text={fromDate} label="复制时间戳" />
-          </div>
-        </div>
-      </div>
-    </ToolPane>
-  )
-}
-
 /**
  * 按指定时区解析日期字符串 → Date(UTC ms)。
  * 支持格式:YYYY-MM-DD HH:mm:ss、YYYY-MM-DDTHH:mm:ss、YYYY/MM/DD HH:mm:ss 等。
@@ -218,4 +95,167 @@ function parseDateInTz(s: string, tz?: string): Date | null {
   // 计算该时区在此时刻的偏移,补偿得到真实 UTC ms
   const offset = tzOffsetMinutes(wallAsUtc, tz)
   return new Date(wallAsUtc - offset * 60000)
+}
+
+// 工具栏/输入框样式
+const inputCls =
+  'h-9 w-full rounded-btn border border-line bg-bg-surface px-3 font-mono text-code text-ink-primary outline-none focus:border-accent'
+
+export default function Timestamp(_: ToolProps) {
+  const [now, setNow] = useState(Date.now())
+  // 时间戳输入(秒或毫秒,自动判断)与日期输入独立维护,互转联动
+  const [tsInput, setTsInput] = useState('')
+  const [dateInput, setDateInput] = useState('')
+  const [tzId, setTzId] = useState('local')
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  const tz = useMemo(
+    () => TIMEZONES.find((t) => t.id === tzId) ?? TIMEZONES[0],
+    [tzId],
+  )
+
+  const offset = useMemo(() => tzOffsetMinutes(now, tz.tz), [now, tz.tz])
+
+  // 时间戳输入 → 日期(实时转换)
+  const dateFromTs = useMemo(() => {
+    const trimmed = tsInput.trim()
+    if (!trimmed) return ''
+    const asNum = Number(trimmed)
+    if (isNaN(asNum) || trimmed === '') return ''
+    // 秒/毫秒自动判断:10 位及以下视为秒
+    const ms = trimmed.length <= 10 ? asNum * 1000 : asNum
+    const d = new Date(ms)
+    if (isNaN(d.getTime())) return ''
+    return formatInTz(ms, tz.tz)
+  }, [tsInput, tz.tz])
+
+  // 日期输入 → 时间戳(实时转换,按选定时区解析)
+  const tsFromDate = useMemo(() => {
+    const trimmed = dateInput.trim()
+    if (!trimmed) return ''
+    const d = parseDateInTz(trimmed, tz.tz)
+    if (!d || isNaN(d.getTime())) return ''
+    return String(Math.floor(d.getTime() / 1000))
+  }, [dateInput, tz.tz])
+
+  // 时区切换时,若有日期输入则重新格式化对应的时间戳结果(由 useMemo 自动响应)
+  // 但时间戳→日期的结果也会随 tz 变化重新格式化,无需额外处理
+
+  // 联动回写:在一边输入时,把转换结果填到另一边(只读显示,不覆盖用户输入)
+  // 这里采用"结果区"展示而非回写输入框,避免光标跳动与循环
+
+  const fillNow = () => {
+    const sec = Math.floor(now / 1000)
+    setTsInput(String(sec))
+  }
+
+  const clearAll = () => {
+    setTsInput('')
+    setDateInput('')
+  }
+
+  // 当前时间在选定时区下的显示
+  const nowFormatted = formatInTz(now, tz.tz)
+
+  return (
+    <ToolPane title="时间戳 ⇄ 日期">
+      <div className="flex h-full flex-col gap-4">
+        {/* 当前时间 + 时区选择 */}
+        <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-surface p-3">
+          <div className="flex items-center gap-3">
+            <span className="text-caption text-ink-tertiary">当前时间戳</span>
+            <span className="font-mono text-code text-ink-primary">{Math.floor(now / 1000)}</span>
+            <span className="text-ink-tertiary">/</span>
+            <span className="font-mono text-code text-ink-secondary">{now}</span>
+            <div className="ml-auto flex gap-1.5">
+              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(Math.floor(now / 1000)))}>
+                复制秒
+              </ActionBtn>
+              <ActionBtn onClick={() => navigator.clipboard?.writeText(String(now))}>复制毫秒</ActionBtn>
+              <ActionBtn onClick={fillNow} primary>填入</ActionBtn>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-caption text-ink-tertiary">当前时间</span>
+            <span className="font-mono text-code text-ink-primary">{nowFormatted}</span>
+            <span className="text-label text-ink-tertiary">{tz.label} · {offsetLabel(offset)}</span>
+          </div>
+          {/* 时区选择 */}
+          <div className="flex items-center gap-2">
+            <span className="text-caption text-ink-tertiary">时区</span>
+            <select
+              value={tzId}
+              onChange={(e) => setTzId(e.target.value)}
+              className="rounded-btn border border-line bg-bg-surface px-2 py-1 text-caption text-ink-primary outline-none focus:border-accent"
+            >
+              {TIMEZONES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* 双向转换:两个独立输入,各自实时转出对方 */}
+        <div className="flex flex-1 flex-col gap-3">
+          {/* 时间戳 → 日期 */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-label text-ink-tertiary">
+                时间戳(秒/毫秒自动判断)→ 日期 ({tz.label})
+              </label>
+              <span className="text-label text-ink-tertiary">{offsetLabel(offset)}</span>
+            </div>
+            <input
+              type="text"
+              value={tsInput}
+              onChange={(e) => setTsInput(e.target.value)}
+              placeholder="输入时间戳,如 1783284476 或 1783284476000"
+              spellCheck={false}
+              className={inputCls}
+            />
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 flex-1 items-center rounded-btn border border-line bg-bg-subtle px-3 font-mono text-code text-ink-primary">
+                {dateFromTs || <span className="text-ink-tertiary">—</span>}
+              </div>
+              <CopyBtn text={dateFromTs} label="复制日期" />
+            </div>
+          </div>
+
+          {/* 日期 → 时间戳 */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-label text-ink-tertiary">
+                日期 → 时间戳(秒)({tz.label})
+              </label>
+              <span className="text-label text-ink-tertiary">按上方时区解析</span>
+            </div>
+            <input
+              type="text"
+              value={dateInput}
+              onChange={(e) => setDateInput(e.target.value)}
+              placeholder="输入日期,如 2026-07-06 12:00:00"
+              spellCheck={false}
+              className={inputCls}
+            />
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 flex-1 items-center rounded-btn border border-line bg-bg-subtle px-3 font-mono text-code text-ink-primary">
+                {tsFromDate || <span className="text-ink-tertiary">—</span>}
+              </div>
+              <CopyBtn text={tsFromDate} label="复制时间戳" />
+            </div>
+          </div>
+
+          <div className="mt-auto flex justify-end">
+            <ActionBtn onClick={clearAll}>清空</ActionBtn>
+          </div>
+        </div>
+      </div>
+    </ToolPane>
+  )
 }
