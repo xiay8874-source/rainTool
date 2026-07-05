@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Menu } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Store from 'electron-store'
@@ -53,7 +53,7 @@ async function checkForUpdates(): Promise<UpdateResult> {
   const current = app.getVersion()
   try {
     const res = await fetch(RELEASES_URL, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'raintool-updater' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'RainTool-updater' },
     })
     // 404 = 仓库无 release,视为"无更新"而非错误
     if (res.status === 404) return { hasUpdate: false, current }
@@ -91,6 +91,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     backgroundColor: '#fafafa',
+    title: 'RainTool',
     titleBarStyle: 'hiddenInset',
     // 交通灯(关闭/最小化/最大化):嵌入统一顶栏,与三个面板顶部对齐
     // 三个圆点直径 12px,y=14 → 圆心 y=20,底部 y=26,留 2px 余量到 pt-7(28px) 内容区
@@ -109,7 +110,28 @@ function createWindow() {
   }
 }
 
+// 注:不调用 app.setName('RainTool') —— 会改变 userData 目录,
+// 导致 ~/Library/Application Support/raintool 下的既有状态丢失。
+// 改用 productName + 自定义应用菜单设置 macOS 菜单栏显示名。
+
 app.whenReady().then(() => {
+  // macOS 应用菜单首项显示 "RainTool"(替代默认的 Electron/raintool)
+  const isMac = process.platform === 'darwin'
+  const submenu = isMac
+    ? [
+        { role: 'appMenu', label: 'RainTool' },
+        { role: 'services' },
+        { role: 'hide', label: '隐藏 RainTool' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit', label: '退出 RainTool' },
+      ]
+    : [{ role: 'quit', label: '退出 RainTool' }]
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([{ label: 'RainTool', submenu } as Electron.MenuItemConstructorOptions]),
+  )
+
   createWindow()
 
   app.on('activate', () => {

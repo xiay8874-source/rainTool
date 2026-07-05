@@ -1,5 +1,6 @@
 {
   "name": "raintool",
+  "productName": "RainTool",
   "version": "0.1.0",
   "description": "程序员开发工具百宝箱",
   "main": "dist-electron/main.js",

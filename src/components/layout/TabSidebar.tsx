@@ -68,8 +68,8 @@ function ExpandedSidebar() {
 
   return (
     <div className="flex h-full w-56 flex-col border-r border-line bg-bg-surface">
-      {/* 顶部 */}
-      <div className="flex items-center justify-between px-3 pt-7 pb-2 drag">
+      {/* 顶部:固定 60px 高,与 IconRail/Workspace 顶栏对齐,底 border 形成统一分隔线 */}
+      <div className="flex h-[60px] items-center justify-between border-b border-line px-3 pt-7 drag">
         <span className="text-page text-ink-primary">标签页</span>
         <button
           onClick={toggle}

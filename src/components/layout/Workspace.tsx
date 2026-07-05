@@ -52,8 +52,8 @@ export function Workspace() {
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
-      {/* 工具栏:顶部留白对齐交通灯,可拖拽移动窗口 */}
-      <div className="drag flex items-center gap-2 border-b border-line bg-bg-surface px-4 pt-7 pb-2">
+      {/* 工具栏:固定 60px 高,与 IconRail/TabSidebar 顶栏对齐,可拖拽移动窗口 */}
+      <div className="drag flex h-[60px] items-center gap-2 border-b border-line bg-bg-surface px-4 pt-7">
         <span className="text-page text-ink-primary">{toolDef?.name ?? activeTab.toolId}</span>
         {activeTab.groupId && (
           <span className="text-caption text-ink-tertiary">
@@ -131,7 +131,7 @@ function EmptyState({
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
-      <div className="drag flex items-center border-b border-line bg-bg-surface px-4 pt-7 pb-2">
+      <div className="drag flex h-[60px] items-center border-b border-line bg-bg-surface px-4 pt-7">
         <span className="text-page text-ink-primary">RainTool</span>
       </div>
       <div className="flex flex-1 overflow-auto p-6">

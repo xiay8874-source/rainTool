@@ -24,16 +24,19 @@ export function IconRail() {
   }
 
   return (
-    <div className="drag flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface pt-7 pb-2">
-      <button
-        onClick={toggleTabSidebar}
-        className="mb-2 flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
-        title={tabSidebarCollapsed ? '展开标签栏' : '收起标签栏'}
-      >
-        {tabSidebarCollapsed ? <ExpandIcon /> : <CollapseIcon />}
-      </button>
+    <div className="drag flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface pb-2">
+      {/* 顶部:固定 60px 高,与 TabSidebar/Workspace 顶栏对齐,底 border 形成统一分隔线 */}
+      <div className="flex h-[60px] w-full items-center justify-center pt-7">
+        <button
+          onClick={toggleTabSidebar}
+          className="flex h-7 w-7 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary no-drag"
+          title={tabSidebarCollapsed ? '展开标签栏' : '收起标签栏'}
+        >
+          {tabSidebarCollapsed ? <ExpandIcon /> : <CollapseIcon />}
+        </button>
+      </div>
 
-      <div className="mb-1 h-px w-6 bg-line" />
+      <div className="mb-2 h-px w-full bg-line" />
 
       <div className="flex flex-1 flex-col items-center gap-1">
         {CATEGORIES.map((cat) => {
