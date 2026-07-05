@@ -4,34 +4,34 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 低对比度、简约淡雅配色
+        // 简约淡雅,但饱和度与亮度略高于上一版,避免发灰
         bg: {
-          app: '#fafafa',
+          app: '#fbfbfd',
           surface: '#ffffff',
-          subtle: '#f4f5f7',
-          hover: '#eef0f3',
+          subtle: '#f3f5f9',
+          hover: '#eaedf3',
         },
         line: {
-          DEFAULT: '#ebecef',
-          strong: '#e0e2e6',
+          DEFAULT: '#e6e9ef',
+          strong: '#d6dae3',
         },
         ink: {
-          primary: '#3a3d42',
-          secondary: '#6b7178',
-          tertiary: '#9aa0a8',
+          primary: '#2c3142',
+          secondary: '#5a6172',
+          tertiary: '#8a91a1',
         },
         accent: {
-          DEFAULT: '#6b7c93',
-          bg: '#eef1f5',
+          DEFAULT: '#3b6fe0',
+          bg: '#e8efff',
         },
-        danger: '#b08584',
+        danger: '#d65a5a',
         group: {
-          1: '#a8b0bd',
-          2: '#a3a89c',
-          3: '#9aa6b0',
-          4: '#b0a3a1',
-          5: '#a5a8b5',
-          6: '#9eada6',
+          1: '#5b8def',
+          2: '#3ba776',
+          3: '#e0913a',
+          4: '#c85a7a',
+          5: '#7a6bd0',
+          6: '#3bb5b0',
         },
       },
       fontSize: {
@@ -47,7 +47,7 @@ export default {
         btn: '4px',
       },
       boxShadow: {
-        float: '0 8px 24px rgba(0,0,0,.06)',
+        float: '0 8px 24px rgba(0,0,0,.08)',
       },
     },
   },

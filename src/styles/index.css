@@ -38,4 +38,15 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
+  /* CodeArea:文字透明叠在高亮层上,选区用半透明蓝,
+     让下层彩色文字透出来,既能看清选了哪些又不遮文字 */
+  .codearea-input::selection {
+    background: rgba(59, 111, 224, 0.25);
+    color: transparent;
+  }
+  .codearea-input::-moz-selection {
+    background: rgba(59, 111, 224, 0.25);
+    color: transparent;
+  }
 }

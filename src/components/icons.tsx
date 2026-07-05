@@ -114,6 +114,14 @@ export function ChevronDownIcon({ size = 12, className }: IconProps) {
   )
 }
 
+export function ChevronUpIcon({ size = 12, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M6 15l6-6 6 6" />
+    </svg>
+  )
+}
+
 export function CollapseIcon({ size = 14, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>

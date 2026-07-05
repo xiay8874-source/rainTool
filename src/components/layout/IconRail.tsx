@@ -1,6 +1,7 @@
 import { CATEGORIES } from '../tools/catalog'
 import { CategoryIcon, StarIcon, CollapseIcon, ExpandIcon } from '../icons'
 import { useUIStore } from '@/store/ui'
+import { useAppStore } from '@/store/tabs'
 
 export function IconRail() {
   const favoritesOpen = useUIStore((s) => s.favoritesOpen)
@@ -9,6 +10,15 @@ export function IconRail() {
   const toggleTabSidebar = useUIStore((s) => s.toggleTabSidebar)
   const activeCategory = useUIStore((s) => s.activeCategory)
   const setActiveCategory = useUIStore((s) => s.setActiveCategory)
+  const setActiveTab = useAppStore((s) => s.setActiveTab)
+
+  // 点击分类图标:切到该分类的工具选择面板(取消当前活动标签,让 EmptyState 显示)
+  const handleCategoryClick = (catId: typeof CATEGORIES[number]['id']) => {
+    const next = activeCategory === catId ? null : catId
+    setActiveCategory(next)
+    // 清空活动标签,触发 EmptyState(按分类筛选工具列表)
+    setActiveTab(null)
+  }
 
   return (
     <div className="flex h-full w-12 flex-col items-center border-r border-line bg-bg-surface py-2">
@@ -28,7 +38,7 @@ export function IconRail() {
           return (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(active ? null : cat.id)}
+              onClick={() => handleCategoryClick(cat.id)}
               className="group relative flex h-8 w-8 items-center justify-center rounded-btn text-ink-tertiary hover:bg-bg-hover hover:text-ink-secondary"
               title={cat.name}
             >

@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
 import { useAppStore } from '@/store/tabs'
 import { useUIStore } from '@/store/ui'
+import { useFavoritesStore, snapshotTab, snapshotGroup } from '@/store/favorites'
 import { TOOLS, getTool, CATEGORIES } from '../tools/catalog'
 import type { ToolProps } from '../tools/shared'
 
@@ -23,8 +24,24 @@ export function Workspace() {
   const setTabInput = useAppStore((s) => s.setTabInput)
   const duplicateTab = useAppStore((s) => s.duplicateTab)
   const activeCategory = useUIStore((s) => s.activeCategory)
+  const addFavTab = useFavoritesStore((s) => s.addTab)
+  const addFavGroup = useFavoritesStore((s) => s.addGroup)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  // 收藏当前标签页
+  const handleFavTab = () => {
+    if (!activeTab) return
+    const tool = getTool(activeTab.toolId)
+    addFavTab(activeTab.title || tool?.name || activeTab.toolId, snapshotTab(activeTab))
+  }
+  // 收藏当前标签所在的整个分组
+  const handleFavGroup = () => {
+    if (!activeTab?.groupId) return
+    const group = groups.find((g) => g.id === activeTab.groupId)
+    if (!group) return
+    addFavGroup(group.name, snapshotGroup(group, tabs))
+  }
 
   // 无活动标签时,显示分类的工具选择面板
   if (!activeTab) {
@@ -32,7 +49,6 @@ export function Workspace() {
   }
 
   const toolDef = getTool(activeTab.toolId)
-  const ToolComp = loadTool(activeTab.toolId)
 
   return (
     <div className="flex h-full flex-col bg-bg-app">
@@ -48,34 +64,53 @@ export function Workspace() {
           <ToolBtn onClick={() => duplicateTab(activeTab.id)}>
             复制此页
           </ToolBtn>
-          <ToolBtn>★ 收藏此页</ToolBtn>
-          <ToolBtn>★ 收藏当前分组</ToolBtn>
+          <ToolBtn onClick={handleFavTab}>★ 收藏此页</ToolBtn>
+          <ToolBtn onClick={handleFavGroup} disabled={!activeTab.groupId}>
+            ★ 收藏当前分组
+          </ToolBtn>
         </div>
       </div>
 
-      {/* 工具内容 */}
-      <div className="flex-1 overflow-auto">
-        {ToolComp ? (
-          <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>
-            <ToolComp
-              input={activeTab.state.input}
-              onInput={(v) => setTabInput(activeTab.id, v)}
-              config={activeTab.state.config}
-            />
-          </Suspense>
-        ) : (
-          <div className="p-4 text-caption text-ink-tertiary">未知工具: {activeTab.toolId}</div>
-        )}
+      {/* 工具内容:keep-alive —— 所有已打开标签都挂载,用显隐切换,保留各工具内部状态(模式/光标/滚动等) */}
+      <div className="relative flex-1 overflow-hidden">
+        {tabs.map((t) => {
+          const Comp = loadTool(t.toolId)
+          if (!Comp) return null
+          return (
+            <div
+              key={t.id}
+              className="absolute inset-0 overflow-auto"
+              style={{ display: t.id === activeTabId ? 'block' : 'none' }}
+            >
+              <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>
+                <Comp
+                  input={t.state.input}
+                  onInput={(v) => setTabInput(t.id, v)}
+                  config={t.state.config}
+                />
+              </Suspense>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function ToolBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+function ToolBtn({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode
+  onClick?: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       onClick={onClick}
-      className="rounded-btn border border-line px-2 py-1 text-caption text-ink-secondary hover:bg-bg-hover hover:text-ink-primary"
+      disabled={disabled}
+      className="rounded-btn border border-line px-2 py-1 text-caption text-ink-secondary hover:bg-bg-hover hover:text-ink-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
     >
       {children}
     </button>

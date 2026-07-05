@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:electron": "npm run build:electron && electron .",
     "build": "tsc -b && vite build",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
     "preview": "vite preview",
     "start": "npm run build:electron && electron .",
     "start:prod": "npm run build && npm run build:electron && electron ."

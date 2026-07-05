@@ -50,7 +50,7 @@ interface AppState {
   closeTab: (id: string) => void
   renameTab: (id: string, title: string) => void
   duplicateTab: (id: string) => string
-  setActiveTab: (id: string) => void
+  setActiveTab: (id: string | null) => void
   setTabInput: (id: string, input: string) => void
   setTabConfig: (id: string, config: string) => void
   togglePin: (id: string) => void
@@ -67,6 +67,10 @@ interface AppState {
   ungroup: (id: string) => void
   /** 关闭组内所有标签 */
   closeGroupTabs: (id: string) => void
+
+  // 持久化:重启后恢复完整工作区
+  persist: () => void
+  hydrate: () => Promise<void>
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
@@ -200,4 +204,54 @@ export const useAppStore = create<AppState>((set, get) => ({
         : s.activeTabId
       return { tabs, activeTabId }
     }),
+
+  persist: () => {
+    const { tabs, groups, activeTabId } = get()
+    const snapshot = { tabs, groups, activeTabId, version: 1 }
+    try {
+      const w = window as unknown as { raintool?: { storeSet: (k: string, v: unknown) => void } }
+      if (w.raintool?.storeSet) {
+        w.raintool.storeSet('workspace', snapshot)
+      } else {
+        localStorage.setItem('raintool:workspace', JSON.stringify(snapshot))
+      }
+    } catch {
+      /* ignore */
+    }
+  },
+
+  hydrate: async () => {
+    try {
+      const w = window as unknown as { raintool?: { storeGet: (k: string) => Promise<unknown> } }
+      let data: { tabs?: Tab[]; groups?: TabGroup[]; activeTabId?: string | null } | null = null
+      if (w.raintool?.storeGet) {
+        data = (await w.raintool.storeGet('workspace')) as typeof data
+      } else {
+        const s = localStorage.getItem('raintool:workspace')
+        data = s ? JSON.parse(s) : null
+      }
+      if (data && (data.tabs?.length || data.groups?.length)) {
+        set({
+          tabs: data.tabs ?? [],
+          groups: data.groups ?? [],
+          // 活动标签若不存在则置空
+          activeTabId:
+            data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId)
+              ? data.activeTabId
+              : (data.tabs?.[0]?.id ?? null),
+        })
+      }
+    } catch {
+      /* ignore */
+    }
+  },
 }))
+
+// 自动持久化:任何状态变化都触发防抖保存(300ms)
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+useAppStore.subscribe(() => {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    useAppStore.getState().persist()
+  }, 300)
+})

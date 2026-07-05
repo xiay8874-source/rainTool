@@ -1,12 +1,15 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Store from 'electron-store'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !app.isPackaged
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-// electron-store v10:default export,CommonJS 下直接用
-// 用类型断言绕过泛型重载推断的复杂性
+// electron-store v10:default export,ESM 下直接 import
+// 类型断言绕过泛型重载推断的复杂性
 const store = new Store<Record<string, unknown>>() as unknown as {
   get(key: string): unknown
   set(key: string, value: unknown): void
