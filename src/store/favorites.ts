@@ -58,9 +58,11 @@ interface FavoritesState {
   restoreTab: (id: string) => FavoriteTab | null
   restoreGroup: (id: string) => FavoriteGroup | null
 
-  /** 持久化到 electron-store */
-  persist: () => void
-  /** 从 electron-store 加载 */
+  /** 持久化到 ~/raintool/favorites.json */
+  persist: () => Promise<void>
+  /** 退出前立即保存(供 onFlush 调用) */
+  flush: () => Promise<void>
+  /** 从 ~/raintool/favorites.json 加载 */
   hydrate: () => Promise<void>
 }
 
@@ -129,12 +131,11 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
 
   restoreGroup: (id) => get().items.find((i) => i.id === id)?.group ?? null,
 
-  persist: () => {
+  persist: async () => {
     const { items, folders } = get()
     try {
-      const w = window as unknown as { raintool?: { storeSet: (k: string, v: unknown) => void } }
-      if (w.raintool?.storeSet) {
-        w.raintool.storeSet(STORE_KEY, { items, folders })
+      if (window.raintool?.storeSet) {
+        await window.raintool.storeSet(STORE_KEY, { items, folders })
       } else {
         // 浏览器降级
         localStorage.setItem('raintool:favorites', JSON.stringify({ items, folders }))
@@ -144,14 +145,15 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
     }
   },
 
+  flush: async () => {
+    await get().persist()
+  },
+
   hydrate: async () => {
     try {
-      const w = window as unknown as {
-        raintool?: { storeGet: (k: string) => Promise<unknown> }
-      }
       let data: { items?: FavoriteItem[]; folders?: FavoriteFolder[] } | null = null
-      if (w.raintool?.storeGet) {
-        data = (await w.raintool.storeGet(STORE_KEY)) as typeof data
+      if (window.raintool?.storeGet) {
+        data = (await window.raintool.storeGet(STORE_KEY)) as typeof data
       } else {
         const s = localStorage.getItem('raintool:favorites')
         data = s ? JSON.parse(s) : null

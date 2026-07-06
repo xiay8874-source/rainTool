@@ -24,6 +24,15 @@ const api = {
   // 应用版本号(来自 app.getVersion(),打包后读 package.json)
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
 
+  // 退出前 flush:主进程 before-quit / installUpdate 退出前发 app:flush,
+  // 渲染进程执行完异步保存后回 app:flushed,主进程收到后才放行退出
+  onFlush: (cb: () => Promise<void>) => {
+    ipcRenderer.on('app:flush', async () => {
+      try { await cb() } catch { /* flush 失败不阻塞退出 */ }
+      ipcRenderer.send('app:flushed')
+    })
+  },
+
   // 鼠标后退/前进侧键:订阅方向事件(-1 后退 / 1 前进)
   onMouseNav: (cb: (direction: number) => void) => {
     const listener = (_e: unknown, direction: number) => cb(direction)

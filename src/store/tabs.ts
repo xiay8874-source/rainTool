@@ -78,7 +78,9 @@ interface AppState {
   closeGroupTabs: (id: string) => void
 
   // 持久化:重启后恢复完整工作区
-  persist: () => void
+  persist: () => Promise<void>
+  /** 退出前立即保存(取消防抖,await persist)。供 onFlush 调用 */
+  flush: () => Promise<void>
   hydrate: () => Promise<void>
 }
 
@@ -286,13 +288,12 @@ export const useAppStore = create<AppState>((set, get) => {
     if (tabIds.includes(s.activeTabId ?? '')) pushHistory(s.activeTabId)
   },
 
-  persist: () => {
+  persist: async () => {
     const { tabs, groups, activeTabId } = get()
     const snapshot = { tabs, groups, activeTabId, version: 1 }
     try {
-      const w = window as unknown as { raintool?: { storeSet: (k: string, v: unknown) => void } }
-      if (w.raintool?.storeSet) {
-        w.raintool.storeSet('workspace', snapshot)
+      if (window.raintool?.storeSet) {
+        await window.raintool.storeSet('workspace', snapshot)
       } else {
         localStorage.setItem('raintool:workspace', JSON.stringify(snapshot))
       }
@@ -301,12 +302,16 @@ export const useAppStore = create<AppState>((set, get) => {
     }
   },
 
+  flush: async () => {
+    if (persistTimer) { clearTimeout(persistTimer); persistTimer = null }
+    await get().persist()
+  },
+
   hydrate: async () => {
     try {
-      const w = window as unknown as { raintool?: { storeGet: (k: string) => Promise<unknown> } }
       let data: { tabs?: Tab[]; groups?: TabGroup[]; activeTabId?: string | null } | null = null
-      if (w.raintool?.storeGet) {
-        data = (await w.raintool.storeGet('workspace')) as typeof data
+      if (window.raintool?.storeGet) {
+        data = (await window.raintool.storeGet('workspace')) as typeof data
       } else {
         const s = localStorage.getItem('raintool:workspace')
         data = s ? JSON.parse(s) : null

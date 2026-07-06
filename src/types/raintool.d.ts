@@ -37,6 +37,10 @@ export interface RaintoolAPI {
   // 应用版本号(来自 app.getVersion(),打包后读 package.json)
   getVersion: () => Promise<string>
 
+  // 退出前 flush:主进程 before-quit / installUpdate 退出前发 app:flush,
+  // 渲染进程 await cb 完成异步保存后回 app:flushed,主进程收到才放行退出
+  onFlush: (cb: () => Promise<void>) => void
+
   // 更新检查:查 GitHub Releases latest,对比版本
   checkForUpdates: () => Promise<UpdateCheckResult>
   getLastCheck: () => Promise<number | undefined>

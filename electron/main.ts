@@ -1,35 +1,48 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createWriteStream, unlinkSync, existsSync } from 'node:fs'
+import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import https from 'node:https'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
-import Store from 'electron-store'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !app.isPackaged
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-// electron-store v10:default export,ESM 下直接 import
-// 类型断言绕过泛型重载推断的复杂性
-const store = new Store<Record<string, unknown>>() as unknown as {
-  get(key: string): unknown
-  set(key: string, value: unknown): void
-  delete(key: string): void
+// ============ 持久化:~/raintool/ 明文 JSON 文件 ============
+// 用户主目录下,用户可见可备份。替代 electron-store(其异步 IPC 在退出时不可靠)。
+// 主进程同步 fs 读写,store:set 为同步写盘,保证退出前数据落盘。
+const DATA_DIR = path.join(app.getPath('home'), 'raintool')
+try { mkdirSync(DATA_DIR, { recursive: true }) } catch { /* 已存在或无权限,忽略 */ }
+
+function readData(key: string): unknown {
+  try {
+    return JSON.parse(readFileSync(path.join(DATA_DIR, `${key}.json`), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function writeData(key: string, value: unknown): void {
+  writeFileSync(path.join(DATA_DIR, `${key}.json`), JSON.stringify(value))
+}
+
+function deleteData(key: string): void {
+  try { unlinkSync(path.join(DATA_DIR, `${key}.json`)) } catch { /* 不存在无妨 */ }
 }
 
 let mainWindow: BrowserWindow | null = null
 
-// 持久化 IPC: 收藏夹 / 配置
-ipcMain.handle('store:get', (_e, key: string) => store.get(key))
+// 持久化 IPC:工作区 / 收藏夹 / 配置(同步 fs 读写,渲染层无感)
+ipcMain.handle('store:get', (_e, key: string) => readData(key))
 ipcMain.handle('store:set', (_e, key: string, value: unknown) => {
-  store.set(key, value)
+  writeData(key, value)
 })
 ipcMain.handle('store:delete', (_e, key: string) => {
-  store.delete(key)
+  deleteData(key)
 })
 
 // ============ 自动更新:手动 GitHub Releases 检查 ============
@@ -92,8 +105,14 @@ ipcMain.handle('update:check', () => checkForUpdates())
 // (匿名对 public repo 可用;私有 repo 会 401,渲染进程会降级提示手动下载)。
 const GH_TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
 
-ipcMain.handle('update:getLastCheck', () => store.get('update.lastCheck'))
-ipcMain.handle('update:setLastCheck', (_e, ts: number) => store.set('update.lastCheck', ts))
+ipcMain.handle('update:getLastCheck', () => {
+  const u = readData('update') as { lastCheck?: number } | null
+  return u?.lastCheck
+})
+ipcMain.handle('update:setLastCheck', (_e, ts: number) => {
+  const u = (readData('update') as { lastCheck?: number } | null) ?? {}
+  writeData('update', { ...u, lastCheck: ts })
+})
 
 /** 流式下载文件,推送进度。失败 reject。返回本地路径。 */
 function downloadFile(
@@ -207,12 +226,41 @@ ipcMain.handle('update:install', async (_e, dmgPath: string) => {
   // 5. 清理 dmg 临时文件
   try { unlinkSync(dmgPath) } catch { /* ignore */ }
 
-  // 6. relaunch 退出:旧进程退出后由系统拉起新 app
+  // 6. relaunch 前先 flush 工作区(app.exit 不触发 before-quit,需显式调)
+  await flushBeforeExit()
+
+  // 7. relaunch 退出:旧进程退出后由系统拉起新 app
   app.relaunch()
   app.exit(0)
 })
 // 暴露真实版本号给渲染进程(打包后由 electron 读取 package.json,不再硬编码)
 ipcMain.handle('app:getVersion', () => app.getVersion())
+
+// ============ 退出前 flush 工作区 ============
+// app.exit(0) 不触发 before-quit(见 Electron 文档),自动更新安装时需显式 flush。
+// before-quit 场景(⌘Q/关窗)也复用此机制:发 app:flush → 等渲染进程 app:flushed。
+function flushBeforeExit(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!mainWindow || mainWindow.isDestroyed()) { resolve(); return }
+    const timer = setTimeout(resolve, 2000) // 超时兜底:2s 后无论如何继续
+    ipcMain.once('app:flushed', () => { clearTimeout(timer); resolve() })
+    mainWindow.webContents.send('app:flush')
+  })
+}
+
+let isFlushing = false
+app.on('before-quit', (e) => {
+  if (isFlushing || !mainWindow || mainWindow.isDestroyed()) return
+  e.preventDefault()
+  isFlushing = true
+  const timer = setTimeout(() => { isFlushing = false; app.quit() }, 1500)
+  ipcMain.once('app:flushed', () => {
+    clearTimeout(timer)
+    isFlushing = false
+    app.quit()
+  })
+  mainWindow.webContents.send('app:flush')
+})
 
 function createWindow() {
   mainWindow = new BrowserWindow({

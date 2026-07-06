@@ -51,14 +51,15 @@ export default function App() {
     hydrateFavorites()
   }, [hydrateWorkspace, hydrateFavorites])
 
-  // 应用退出前确保最新状态已落盘(electron before-quit 也会触发)
+  // 退出前 flush 工作区 + 收藏区(主进程 before-quit / installUpdate 触发 app:flush)
+  // 替代不可靠的 beforeunload:主进程发 app:flush → 这里 await 两个 flush → 回 app:flushed
   useEffect(() => {
-    const flush = () => {
-      useAppStore.getState().persist()
-      useFavoritesStore.getState().persist()
-    }
-    window.addEventListener('beforeunload', flush)
-    return () => window.removeEventListener('beforeunload', flush)
+    window.raintool?.onFlush?.(async () => {
+      await Promise.all([
+        useAppStore.getState().flush(),
+        useFavoritesStore.getState().flush(),
+      ])
+    })
   }, [])
 
   // ⌘B 收藏夹;⌘F 查找;⌘[/⌘] 或 Alt+←/→ 标签前进/后退
