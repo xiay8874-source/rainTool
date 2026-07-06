@@ -243,7 +243,7 @@ function createWindow() {
   // 用 role 而非自定义 label+click —— Electron 会原生执行剪贴板操作。
   // 启用状态用 params.editFlags(由 Electron 根据选区/可编辑状态/剪贴板计算):
   //   canCopy/canCut 无选区时为 false;canPaste 仅在可编辑且剪贴板有内容时为 true。
-  // 快捷键(Cmd+C/X/V/A)由浏览器原生处理,无需额外绑定。
+  // 快捷键 ⌘C/⌘X/⌘V/⌘A 由上方 Edit 菜单的 role accelerator 驱动(macOS 必需)。
   mainWindow.webContents.on('context-menu', (_event, params) => {
     const f = params.editFlags
     const menu = Menu.buildFromTemplate([
@@ -264,7 +264,7 @@ function createWindow() {
 app.whenReady().then(() => {
   // macOS 应用菜单首项显示 "RainTool"(替代默认的 Electron/raintool)
   const isMac = process.platform === 'darwin'
-  const submenu = isMac
+  const appSubmenu = isMac
     ? [
         { role: 'appMenu', label: 'RainTool' },
         { role: 'services' },
@@ -275,8 +275,24 @@ app.whenReady().then(() => {
         { role: 'quit', label: '退出 RainTool' },
       ]
     : [{ role: 'quit', label: '退出 RainTool' }]
+
+  // Edit 菜单:macOS 上 ⌘C/⌘X/⌘V/⌘A/⌘Z 等快捷键由菜单 role 的 accelerator 驱动,
+  // 若应用菜单覆盖了默认菜单而不补 Edit,这些快捷键会失效。
+  const editSubmenu: Electron.MenuItemConstructorOptions[] = [
+    { role: 'undo', label: '撤销' },
+    { role: 'redo', label: '重做' },
+    { type: 'separator' },
+    { role: 'cut', label: '剪切' },
+    { role: 'copy', label: '复制' },
+    { role: 'paste', label: '粘贴' },
+    { role: 'selectAll', label: '全选' },
+  ]
+
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([{ label: 'RainTool', submenu } as Electron.MenuItemConstructorOptions]),
+    Menu.buildFromTemplate([
+      { label: 'RainTool', submenu: appSubmenu } as Electron.MenuItemConstructorOptions,
+      { label: '编辑', submenu: editSubmenu },
+    ]),
   )
 
   createWindow()
