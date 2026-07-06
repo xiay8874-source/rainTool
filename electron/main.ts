@@ -290,21 +290,22 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
-  // 右键菜单:复制/剪切/粘贴/全选。
-  // 用 role 而非自定义 label+click —— Electron 会原生执行剪贴板操作。
-  // 启用状态用 params.editFlags(由 Electron 根据选区/可编辑状态/剪贴板计算):
-  //   canCopy/canCut 无选区时为 false;canPaste 仅在可编辑且剪贴板有内容时为 true。
+  // 右键菜单:仅在文本区(textarea/input/contenteditable)或有选中文字时弹出,
+  // 避免与其他右键功能冲突。可编辑区弹完整菜单;只读区只弹复制。
   // 快捷键 ⌘C/⌘X/⌘V/⌘A 由上方 Edit 菜单的 role accelerator 驱动(macOS 必需)。
   mainWindow.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable && !params.selectionText) return
     const f = params.editFlags
-    const menu = Menu.buildFromTemplate([
-      { role: 'copy', label: '复制', enabled: f.canCopy },
-      { role: 'cut', label: '剪切', enabled: f.canCut },
-      { role: 'paste', label: '粘贴', enabled: f.canPaste },
-      { type: 'separator' },
-      { role: 'selectAll', label: '全选', enabled: f.canSelectAll },
-    ])
-    menu.popup({ window: mainWindow! })
+    const template: Electron.MenuItemConstructorOptions[] = params.isEditable
+      ? [
+          { role: 'copy', label: '复制', enabled: f.canCopy },
+          { role: 'cut', label: '剪切', enabled: f.canCut },
+          { role: 'paste', label: '粘贴', enabled: f.canPaste },
+          { type: 'separator' },
+          { role: 'selectAll', label: '全选', enabled: f.canSelectAll },
+        ]
+      : [{ role: 'copy', label: '复制', enabled: f.canCopy }]
+    Menu.buildFromTemplate(template).popup({ window: mainWindow! })
   })
 }
 
