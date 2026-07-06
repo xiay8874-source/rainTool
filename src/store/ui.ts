@@ -14,6 +14,8 @@ interface UIState {
   favoritesRect: { x: number; y: number; w: number; h: number }
   /** 是否检测到有新版本(设置图标红点提示) */
   hasUpdate: boolean
+  /** 检测到的新版信息(供设置面板跨挂载展示 release notes)。null = 无更新或未检查 */
+  updateInfo: { version: string; notes: string; publishedAt: string } | null
 
   toggleTabSidebar: () => void
   toggleFavorites: () => void
@@ -23,6 +25,7 @@ interface UIState {
   setActiveCategory: (id: ToolCategoryId | null) => void
   setFavoritesRect: (rect: Partial<{ x: number; y: number; w: number; h: number }>) => void
   setHasUpdate: (v: boolean) => void
+  setUpdateInfo: (info: { version: string; notes: string; publishedAt: string } | null) => void
 }
 
 const savedRect = (() => {
@@ -42,6 +45,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   activeCategory: null,
   favoritesRect: savedRect,
   hasUpdate: false,
+  updateInfo: null,
 
   toggleTabSidebar: () => set((s) => ({ tabSidebarCollapsed: !s.tabSidebarCollapsed })),
   toggleFavorites: () => set((s) => ({ favoritesOpen: !s.favoritesOpen })),
@@ -59,4 +63,5 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ favoritesRect: next })
   },
   setHasUpdate: (v) => set({ hasUpdate: v }),
+  setUpdateInfo: (info) => set({ updateInfo: info }),
 }))

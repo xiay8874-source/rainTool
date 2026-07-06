@@ -1,6 +1,11 @@
-import { app, BrowserWindow, ipcMain, shell, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createWriteStream, unlinkSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import https from 'node:https'
+import http from 'node:http'
+import { spawn } from 'node:child_process'
 import Store from 'electron-store'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -80,9 +85,132 @@ async function checkForUpdates(): Promise<UpdateResult> {
 }
 
 ipcMain.handle('update:check', () => checkForUpdates())
-ipcMain.handle('update:open', (_e, url: string) => shell.openExternal(url))
+
+// ============ 应用内自动更新:下载 dmg → 挂载 → 替换 app → relaunch ============
+// 不依赖 electron-updater(需 Developer ID 分发签名),改用原生流式下载 + shell 替换。
+// 私有仓库 release 资产下载:若环境有 GH_TOKEN 则带 Authorization 头,否则匿名试下
+// (匿名对 public repo 可用;私有 repo 会 401,渲染进程会降级提示手动下载)。
+const GH_TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
+
 ipcMain.handle('update:getLastCheck', () => store.get('update.lastCheck'))
 ipcMain.handle('update:setLastCheck', (_e, ts: number) => store.set('update.lastCheck', ts))
+
+/** 流式下载文件,推送进度。失败 reject。返回本地路径。 */
+function downloadFile(
+  url: string,
+  dest: string,
+  onProgress: (percent: number, transferred: number, total: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https:') ? https : http
+    const headers: Record<string, string> = { 'User-Agent': 'RainTool-updater' }
+    if (GH_TOKEN) headers.Authorization = `token ${GH_TOKEN}`
+
+    const req = lib.get(url, { headers }, (res) => {
+      // 处理重定向(GitHub release 下载会 302 到 objects.githubusercontent.com)
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume()
+        downloadFile(res.headers.location, dest, onProgress).then(resolve, reject)
+        return
+      }
+      if (res.statusCode !== 200) {
+        res.resume()
+        reject(new Error(`下载失败:HTTP ${res.statusCode}`))
+        return
+      }
+      const total = Number(res.headers['content-length'] ?? 0)
+      let transferred = 0
+      const ws = createWriteStream(dest)
+      res.on('data', (chunk: Buffer) => {
+        transferred += chunk.length
+        const percent = total > 0 ? Math.round((transferred / total) * 100) : 0
+        onProgress(percent, transferred, total)
+      })
+      res.pipe(ws)
+      ws.on('finish', () => ws.close(() => resolve(dest)))
+      ws.on('error', (e) => {
+        try { unlinkSync(dest) } catch { /* ignore */ }
+        reject(e)
+      })
+    })
+    req.on('error', reject)
+  })
+}
+
+ipcMain.handle('update:download', async (_e, url: string) => {
+  // 文件名从 URL 末段取,兜底用固定名
+  const name = url.split('/').pop() || 'RainTool-update.dmg'
+  const dest = path.join(tmpdir(), name)
+  // 同名残留先清,避免 createWriteStream 追加
+  if (existsSync(dest)) { try { unlinkSync(dest) } catch { /* ignore */ } }
+
+  await downloadFile(url, dest, (percent, transferred, total) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:progress', { percent, transferred, total })
+    }
+  })
+  return dest
+})
+
+/** 执行 shell 命令,resolve(stdout)。失败 reject(带 stderr) */
+function runShell(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    p.stdout.on('data', (d) => { stdout += d })
+    p.stderr.on('data', (d) => { stderr += d })
+    p.on('error', reject)
+    p.on('close', (code) => {
+      if (code === 0) resolve(stdout)
+      else reject(new Error(`${cmd} 退出码 ${code}: ${stderr.trim()}`))
+    })
+  })
+}
+
+/** 从 hdiutil attach 输出里解析挂载点。输出形如:
+ *   /dev/disk4s1  Apple_HFS   /Volumes/RainTool 0.2.3 */
+function parseMountPoint(output: string): string | null {
+  // 取最后一个非空行,按 tab 分割,最后一段即挂载点
+  const lines = output.trim().split('\n').filter(Boolean)
+  const last = lines[lines.length - 1]
+  if (!last) return null
+  const parts = last.split('\t').map((s) => s.trim()).filter(Boolean)
+  return parts[parts.length - 1] ?? null
+}
+
+ipcMain.handle('update:install', async (_e, dmgPath: string) => {
+  if (!existsSync(dmgPath)) throw new Error('安装包不存在:' + dmgPath)
+
+  // 1. 挂载 dmg
+  const attachOut = await runShell('hdiutil', ['attach', dmgPath, '-nobrowse', '-quiet'])
+  const mountPoint = parseMountPoint(attachOut)
+  if (!mountPoint) throw new Error('无法解析 dmg 挂载点')
+
+  try {
+    // 2. 找到挂载卷里的 .app(取第一个)
+    const items = await runShell('ls', [mountPoint]).then((s) =>
+      s.split('\n').filter((n) => n.endsWith('.app')),
+    )
+    if (items.length === 0) throw new Error('dmg 内未找到 .app')
+    const appSrc = path.join(mountPoint, items[0])
+    const appDest = '/Applications/' + items[0]
+
+    // 3. 先删旧 app(避免 cp -R 叠加残留),再拷贝
+    await runShell('rm', ['-rf', appDest]).catch(() => { /* 旧 app 不存在无妨 */ })
+    await runShell('cp', ['-R', appSrc, appDest])
+  } finally {
+    // 4. 卸载 dmg(无论拷贝成功与否)
+    await runShell('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => { /* ignore */ })
+  }
+
+  // 5. 清理 dmg 临时文件
+  try { unlinkSync(dmgPath) } catch { /* ignore */ }
+
+  // 6. relaunch 退出:旧进程退出后由系统拉起新 app
+  app.relaunch()
+  app.exit(0)
+})
 // 暴露真实版本号给渲染进程(打包后由 electron 读取 package.json,不再硬编码)
 ipcMain.handle('app:getVersion', () => app.getVersion())
 

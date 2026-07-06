@@ -13,6 +13,7 @@ export default function App() {
   const hydrateFavorites = useFavoritesStore((s) => s.hydrate)
   const hydrateWorkspace = useAppStore((s) => s.hydrate)
   const setHasUpdate = useUIStore((s) => s.setHasUpdate)
+  const setUpdateInfo = useUIStore((s) => s.setUpdateInfo)
 
   // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
   useEffect(() => {
@@ -20,29 +21,29 @@ export default function App() {
     hydrateFavorites()
   }, [hydrateWorkspace, hydrateFavorites])
 
-  // 启动时静默检查更新(24h 节流),有更新则在设置图标显示红点
+  // 启动时静默检查更新(24h 节流),有更新则在设置图标显示红点 + 存 release notes
   useEffect(() => {
     const ONE_DAY = 24 * 60 * 60 * 1000
     ;(async () => {
       try {
-        const w = window as unknown as {
-          raintool?: {
-            getLastCheck: () => Promise<number | undefined>
-            setLastCheck: (ts: number) => Promise<void>
-            checkForUpdates: () => Promise<{ hasUpdate: boolean; current?: string; error?: string }>
-          }
-        }
-        if (!w.raintool) return
-        const last = await w.raintool.getLastCheck()
+        if (!window.raintool) return
+        const last = await window.raintool.getLastCheck()
         if (last && Date.now() - last < ONE_DAY) return // 节流:24h 内不重复检查
-        const result = await w.raintool.checkForUpdates()
-        await w.raintool.setLastCheck(Date.now())
-        if (result.hasUpdate) setHasUpdate(true)
+        const result = await window.raintool.checkForUpdates()
+        await window.raintool.setLastCheck(Date.now())
+        if (result.hasUpdate) {
+          setHasUpdate(true)
+          setUpdateInfo({
+            version: result.version,
+            notes: result.notes,
+            publishedAt: result.publishedAt,
+          })
+        }
       } catch {
         /* 静默失败,不打扰用户 */
       }
     })()
-  }, [setHasUpdate])
+  }, [setHasUpdate, setUpdateInfo])
 
   // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
   useEffect(() => {
@@ -99,10 +100,7 @@ export default function App() {
 
   // 鼠标后退/前进侧键(macOS):订阅主进程的 nav:mouse 事件
   useEffect(() => {
-    const w = window as unknown as {
-      raintool?: { onMouseNav?: (cb: (direction: number) => void) => (() => void) | undefined }
-    }
-    const unsub = w.raintool?.onMouseNav?.((direction) => {
+    const unsub = window.raintool?.onMouseNav?.((direction) => {
       const store = useAppStore.getState()
       if (direction < 0) store.goBack()
       else store.goForward()

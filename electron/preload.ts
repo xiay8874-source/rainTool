@@ -8,9 +8,18 @@ const api = {
 
   // 自动更新:查 GitHub Releases latest,对比版本
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  openReleaseUrl: (url: string) => ipcRenderer.invoke('update:open', url),
   getLastCheck: () => ipcRenderer.invoke('update:getLastCheck'),
-  setLastCheck: (ts: number) => ipcRenderer.invoke('update:setLastCheck', ts),
+  setLastCheck: (ts: number) => ipcRenderer.invoke('update:setLastCheck'),
+
+  // 应用内下载安装(替代旧的浏览器跳转)
+  // downloadUpdate 返回本地 dmg 路径;下载进度通过 onUpdateProgress 订阅
+  downloadUpdate: (url: string) => ipcRenderer.invoke('update:download', url),
+  installUpdate: (dmgPath: string) => ipcRenderer.invoke('update:install', dmgPath),
+  onUpdateProgress: (cb: (p: { percent: number; transferred: number; total: number }) => void) => {
+    const listener = (_e: unknown, p: { percent: number; transferred: number; total: number }) => cb(p)
+    ipcRenderer.on('update:progress', listener)
+    return () => ipcRenderer.removeListener('update:progress', listener)
+  },
 
   // 应用版本号(来自 app.getVersion(),打包后读 package.json)
   getVersion: () => ipcRenderer.invoke('app:getVersion'),

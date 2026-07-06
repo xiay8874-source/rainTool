@@ -162,3 +162,13 @@ export function ForwardIcon({ size = 16, className }: IconProps) {
     </svg>
   )
 }
+
+export function DownloadIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M12 3v12" />
+      <path d="M7 11l5 5 5-5" />
+      <path d="M5 20h14" />
+    </svg>
+  )
+}
