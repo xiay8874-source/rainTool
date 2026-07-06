@@ -110,6 +110,23 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  // 右键菜单:复制/剪切/粘贴/全选。
+  // 用 role 而非自定义 label+click —— Electron 会原生执行剪贴板操作。
+  // 启用状态用 params.editFlags(由 Electron 根据选区/可编辑状态/剪贴板计算):
+  //   canCopy/canCut 无选区时为 false;canPaste 仅在可编辑且剪贴板有内容时为 true。
+  // 快捷键(Cmd+C/X/V/A)由浏览器原生处理,无需额外绑定。
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const f = params.editFlags
+    const menu = Menu.buildFromTemplate([
+      { role: 'copy', label: '复制', enabled: f.canCopy },
+      { role: 'cut', label: '剪切', enabled: f.canCut },
+      { role: 'paste', label: '粘贴', enabled: f.canPaste },
+      { type: 'separator' },
+      { role: 'selectAll', label: '全选', enabled: f.canSelectAll },
+    ])
+    menu.popup({ window: mainWindow! })
+  })
 }
 
 // 注:不调用 app.setName('RainTool') —— 会改变 userData 目录,
