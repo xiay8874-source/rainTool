@@ -249,13 +249,16 @@ function flushBeforeExit(): Promise<void> {
 }
 
 let isFlushing = false
+let flushDone = false // flush 已完成,后续 before-quit 直接放行(避免 app.quit() 死循环)
 app.on('before-quit', (e) => {
-  if (isFlushing || !mainWindow || mainWindow.isDestroyed()) return
+  if (flushDone || !mainWindow || mainWindow.isDestroyed()) return
+  if (isFlushing) return
   e.preventDefault()
   isFlushing = true
-  const timer = setTimeout(() => { isFlushing = false; app.quit() }, 1500)
+  const timer = setTimeout(() => { flushDone = true; isFlushing = false; app.quit() }, 1500)
   ipcMain.once('app:flushed', () => {
     clearTimeout(timer)
+    flushDone = true
     isFlushing = false
     app.quit()
   })
