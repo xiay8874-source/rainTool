@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useUIStore } from '@/store/ui'
 import { CloseIcon, SettingsIcon, DownloadIcon } from '../icons'
+import type { ShortcutMap } from '@/types/raintool'
 
 type CheckState =
   | { status: 'idle' }
@@ -267,19 +268,187 @@ export function SettingsFloat() {
 
           <div className="h-px bg-line" />
 
-          {/* 快捷键提示 */}
-          <div className="flex flex-col gap-1 text-label text-ink-tertiary">
-            <div className="flex justify-between">
-              <span>收藏夹</span>
-              <span className="font-mono">⌘B</span>
-            </div>
-            <div className="flex justify-between">
-              <span>查找替换</span>
-              <span className="font-mono">⌘F</span>
-            </div>
-          </div>
+          {/* 快捷键自定义 */}
+          <ShortcutSettings />
+
+          <div className="h-px bg-line" />
         </div>
       </div>
     </>
+  )
+}
+
+// ============ 快捷键设置 ============
+
+const SHORTCUT_LABELS: { key: keyof ShortcutMap; label: string; desc: string }[] = [
+  { key: 'captureRegion', label: '区域截图', desc: '拖拽框选屏幕区域' },
+  { key: 'captureScreen', label: '全屏截图', desc: '截取整个屏幕' },
+  { key: 'captureWindow', label: '窗口截图', desc: '截取指定应用窗口' },
+  { key: 'togglePins', label: '显示/隐藏所有贴图', desc: '一键切换所有贴图可见性' },
+]
+
+const DEFAULT_SHORTCUTS: ShortcutMap = {
+  captureRegion: 'CommandOrControl+Shift+A',
+  captureScreen: 'CommandOrControl+Shift+S',
+  captureWindow: 'CommandOrControl+Shift+W',
+  togglePins: 'CommandOrControl+Shift+P',
+}
+
+/** 把 Electron accelerator 格式转为可读显示 */
+function formatAccel(accel: string): string {
+  return accel
+    .replace(/CommandOrControl/g, '⌘')
+    .replace(/Control/g, '⌃')
+    .replace(/Shift/g, '⇧')
+    .replace(/Alt/g, '⌥')
+    .replace(/\+/g, '')
+}
+
+function ShortcutSettings() {
+  const [shortcuts, setShortcuts] = useState<ShortcutMap>(DEFAULT_SHORTCUTS)
+  const [editing, setEditing] = useState<keyof ShortcutMap | null>(null)
+  const [conflict, setConflict] = useState<string | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+  const recordingRef = useRef(false)
+
+  useEffect(() => {
+    window.raintool?.getShortcuts().then((map) => {
+      if (map) setShortcuts(map)
+    })
+  }, [])
+
+  // 录入快捷键:监听 keydown
+  useEffect(() => {
+    if (!editing) return
+
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // 只认修饰键组合,单独按修饰键不触发
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return
+
+      const parts: string[] = []
+      if (e.metaKey || e.ctrlKey) parts.push('CommandOrControl')
+      if (e.shiftKey) parts.push('Shift')
+      if (e.altKey) parts.push('Alt')
+
+      // 主键
+      let key = e.key
+      if (key === ' ') key = 'Space'
+      else if (key.length === 1) key = key.toUpperCase()
+      parts.push(key)
+
+      const accel = parts.join('+')
+
+      // 检查内部冲突
+      const conflictKey = (Object.keys(shortcuts) as (keyof ShortcutMap)[]).find(
+        (k) => k !== editing && shortcuts[k] === accel,
+      )
+      if (conflictKey) {
+        setConflict(`与「${SHORTCUT_LABELS.find((s) => s.key === conflictKey)?.label}」冲突`)
+        return
+      }
+
+      // 检查系统冲突
+      recordingRef.current = true
+      window.raintool?.checkShortcutConflict(accel).then((isConflict) => {
+        recordingRef.current = false
+        if (isConflict) {
+          setConflict('此快捷键已被系统占用,请换一个组合')
+        } else {
+          setConflict(null)
+          const newMap = { ...shortcuts, [editing]: accel }
+          setShortcuts(newMap)
+          window.raintool?.updateShortcuts(newMap)
+          setEditing(null)
+          setSaved(editing)
+          setTimeout(() => setSaved(null), 1500)
+        }
+      })
+    }
+
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [editing, shortcuts])
+
+  const handleReset = () => {
+    setShortcuts(DEFAULT_SHORTCUTS)
+    window.raintool?.updateShortcuts(DEFAULT_SHORTCUTS)
+    setEditing(null)
+    setConflict(null)
+    setSaved('reset')
+    setTimeout(() => setSaved(null), 1500)
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-caption text-ink-tertiary">截图快捷键(系统全局)</span>
+        <button
+          onClick={handleReset}
+          className="text-label text-ink-tertiary hover:text-ink-secondary"
+        >
+          恢复默认
+        </button>
+      </div>
+
+      {SHORTCUT_LABELS.map(({ key, label, desc }) => (
+        <div
+          key={key}
+          className={`flex items-center justify-between rounded-btn border px-2.5 py-1.5 ${
+            editing === key
+              ? 'border-accent bg-accent-bg/30'
+              : conflict && editing === key
+                ? 'border-danger bg-danger/5'
+                : 'border-line bg-bg-subtle'
+          }`}
+        >
+          <div>
+            <div className="text-caption text-ink-primary">{label}</div>
+            <div className="text-label text-ink-tertiary">{desc}</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {editing === key ? (
+              <>
+                <kbd className="rounded-btn border border-accent bg-bg-surface px-2 py-0.5 font-mono text-label text-accent">
+                  按下组合键…
+                </kbd>
+                <button
+                  onClick={() => { setEditing(null); setConflict(null) }}
+                  className="text-label text-ink-tertiary hover:text-ink-secondary"
+                >
+                  ✕
+                </button>
+              </>
+            ) : (
+              <>
+                <kbd className="rounded-btn border border-line bg-bg-surface px-2 py-0.5 font-mono text-label text-ink-secondary">
+                  {formatAccel(shortcuts[key])}
+                </kbd>
+                <button
+                  onClick={() => { setEditing(key); setConflict(null) }}
+                  className="text-label text-ink-tertiary hover:text-ink-secondary"
+                >
+                  ✎
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {conflict && editing && (
+        <div className="rounded-btn bg-danger/10 px-2.5 py-1.5 text-label text-danger">
+          ⚠ {conflict}
+        </div>
+      )}
+
+      {saved && (
+        <div className="rounded-btn bg-accent-bg px-2.5 py-1.5 text-label text-accent">
+          ✓ {saved === 'reset' ? '已恢复默认' : '已保存'}
+        </div>
+      )}
+    </div>
   )
 }

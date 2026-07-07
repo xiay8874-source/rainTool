@@ -1,11 +1,12 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, globalShortcut, desktopCapturer, screen, nativeImage, dialog, clipboard } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import https from 'node:https'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -236,6 +237,427 @@ ipcMain.handle('update:install', async (_e, dmgPath: string) => {
 // 暴露真实版本号给渲染进程(打包后由 electron 读取 package.json,不再硬编码)
 ipcMain.handle('app:getVersion', () => app.getVersion())
 
+// ============ 截图:快捷键 / 截图引擎 / 贴图窗口 ============
+
+const SCREENSHOTS_DIR = path.join(DATA_DIR, 'tabs', 'screenshots')
+try { mkdirSync(SCREENSHOTS_DIR, { recursive: true }) } catch { /* 已存在 */ }
+
+export type CaptureMode = 'region' | 'screen' | 'window'
+
+export interface ShortcutMap {
+  captureRegion: string
+  captureScreen: string
+  captureWindow: string
+  togglePins: string
+}
+
+const DEFAULT_SHORTCUTS: ShortcutMap = {
+  captureRegion: 'CommandOrControl+Shift+A',
+  captureScreen: 'CommandOrControl+Shift+S',
+  captureWindow: 'CommandOrControl+Shift+W',
+  togglePins: 'CommandOrControl+Shift+P',
+}
+
+function readShortcuts(): ShortcutMap {
+  const stored = readData('settings') as { shortcuts?: Partial<ShortcutMap> } | null
+  return { ...DEFAULT_SHORTCUTS, ...(stored?.shortcuts ?? {}) }
+}
+
+function writeShortcuts(map: ShortcutMap): void {
+  const stored = (readData('settings') as Record<string, unknown> | null) ?? {}
+  writeData('settings', { ...stored, shortcuts: map })
+}
+
+function registerShortcuts(map: ShortcutMap): void {
+  globalShortcut.unregisterAll()
+  const entries: [keyof ShortcutMap, () => void][] = [
+    ['captureRegion', () => startCapture('region')],
+    ['captureScreen', () => startCapture('screen')],
+    ['captureWindow', () => startCapture('window')],
+    ['togglePins', () => toggleAllPins()],
+  ]
+  for (const [key, handler] of entries) {
+    const accel = map[key]
+    if (accel) {
+      try {
+        globalShortcut.register(accel, handler)
+      } catch {
+        /* 注册失败忽略(可能系统占用) */
+      }
+    }
+  }
+}
+
+ipcMain.handle('shortcut:get', () => readShortcuts())
+
+ipcMain.handle('shortcut:update', (_e, map: ShortcutMap) => {
+  writeShortcuts(map)
+  registerShortcuts(map)
+  return true
+})
+
+ipcMain.handle('shortcut:checkConflict', (_e, accel: string) => {
+  // 检查快捷键是否被系统或其他应用占用
+  // globalShortcut.isRegistered 只能查自己注册的,系统占用的需尝试注册再注销
+  if (!accel) return false
+  try {
+    const ok = globalShortcut.register(accel, () => {})
+    if (ok) {
+      globalShortcut.unregister(accel)
+      return false // 可注册 = 无冲突
+    }
+    return true // 注册失败 = 被占用
+  } catch {
+    return true
+  }
+})
+
+// ---- 贴图窗口管理 ----
+
+interface PinWindowEntry {
+  win: BrowserWindow
+  tabId: string
+  hidden: boolean
+}
+
+const pinWindows: PinWindowEntry[] = []
+
+function toggleAllPins(): void {
+  const anyVisible = pinWindows.some((p) => !p.hidden)
+  for (const entry of pinWindows) {
+    if (anyVisible) {
+      entry.win.hide()
+      entry.hidden = true
+    } else {
+      entry.win.show()
+      entry.hidden = false
+    }
+  }
+}
+
+// ---- 截图引擎 ----
+
+function formatTimestamp(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 截图落盘:写 PNG + 缩略图,返回 tab 记录(含 id/name/路径) */
+async function saveCapture(img: Electron.NativeImage, source: CaptureMode): Promise<{
+  id: string
+  name: string
+  createdAt: number
+  source: CaptureMode
+  primary: string
+  thumb: string
+  width: number
+  height: number
+}> {
+  const id = randomUUID()
+  const primaryPath = path.join(SCREENSHOTS_DIR, `${id}.png`)
+  const thumbPath = path.join(SCREENSHOTS_DIR, `${id}.thumb.png`)
+
+  writeFileSync(primaryPath, img.toPNG())
+  const { width, height } = img.getSize()
+  const thumb = img.resize({ width: Math.min(200, width) })
+  writeFileSync(thumbPath, thumb.toPNG())
+
+  return {
+    id, name: `截图 ${formatTimestamp()}`, createdAt: Date.now(),
+    source, primary: primaryPath, thumb: thumbPath, width, height,
+  }
+}
+
+/** 创建贴图窗口并加载截图 */
+function createPinWindow(record: {
+  id: string
+  name: string
+  primary: string
+  width: number
+  height: number
+}, x?: number, y?: number): void {
+  const win = new BrowserWindow({
+    width: record.width,
+    height: record.height,
+    x: x ?? undefined,
+    y: y ?? undefined,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: true,
+    hasShadow: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'pin-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  const entry: PinWindowEntry = { win, tabId: record.id, hidden: false }
+  pinWindows.push(entry)
+
+  win.on('closed', () => {
+    const idx = pinWindows.findIndex((p) => p.win === win)
+    if (idx >= 0) pinWindows.splice(idx, 1)
+  })
+
+  if (isDev && VITE_DEV_SERVER_URL) {
+    win.loadURL(VITE_DEV_SERVER_URL.replace(/\/$/, '') + '/pin.html')
+  } else {
+    win.loadFile(path.join(__dirname, '..', 'dist', 'pin.html'))
+  }
+
+  // 传递截图信息给贴图窗口
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('pin:load', {
+      id: record.id,
+      name: record.name,
+      filePath: record.primary,
+    })
+  })
+}
+
+async function startCapture(mode: CaptureMode): Promise<void> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: mode === 'window' ? ['window'] : ['screen'],
+      thumbnailSize: { width: 9999, height: 9999 },
+      fetchWindowIcons: false,
+    })
+
+    if (mode === 'screen') {
+      for (const s of sources) {
+        const img = s.thumbnail
+        if (img.isEmpty()) continue
+        const record = await saveCapture(img, 'screen')
+        createPinWindow(record)
+      }
+      return
+    }
+
+    if (mode === 'window') {
+      // 单显示器:取第一个窗口源
+      if (sources.length === 0) return
+      // 若多窗口,取第一个(活动窗口)
+      const s = sources[0]
+      const img = s.thumbnail
+      if (img.isEmpty()) return
+      const record = await saveCapture(img, 'window')
+      createPinWindow(record)
+      return
+    }
+
+    // region:创建选区覆盖窗口
+    await startRegionCapture(sources)
+  } catch (e) {
+    console.error('截图失败:', e)
+  }
+}
+
+// ---- 区域截图:选区覆盖窗口 ----
+
+let overlayWindows: BrowserWindow[] = []
+
+async function startRegionCapture(sources: Electron.DesktopCapturerSource[]): Promise<void> {
+  // 清理旧覆盖窗口
+  closeOverlays()
+
+  const displays = screen.getAllDisplays()
+
+  for (const display of displays) {
+    const { x, y, width, height } = display.bounds
+    const overlay = new BrowserWindow({
+      x, y, width, height,
+      frame: false,
+      fullscreen: false,
+      alwaysOnTop: true,
+      movable: false,
+      resizable: false,
+      skipTaskbar: true,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
+
+    overlayWindows.push(overlay)
+
+    overlay.on('closed', () => {
+      overlayWindows = overlayWindows.filter((w) => w !== overlay)
+    })
+
+    if (isDev && VITE_DEV_SERVER_URL) {
+      overlay.loadURL(VITE_DEV_SERVER_URL.replace(/\/$/, '') + '/overlay.html')
+    } else {
+      overlay.loadFile(path.join(__dirname, '..', 'dist', 'overlay.html'))
+    }
+
+    // 传递显示器信息和对应截图
+    overlay.webContents.on('did-finish-load', () => {
+      const matchingSource = sources.find((s) => {
+        return s.display_id === String(display.id) || sources.indexOf(s) === displays.indexOf(display)
+      }) ?? sources[displays.indexOf(display)] ?? sources[0]
+
+      overlay.webContents.send('overlay:init', {
+        display: { x, y, width, height, id: display.id },
+        imageData: matchingSource?.thumbnail.toDataURL() ?? null,
+      })
+    })
+  }
+}
+
+function closeOverlays(): void {
+  for (const w of overlayWindows) {
+    if (!w.isDestroyed()) w.close()
+  }
+  overlayWindows = []
+}
+
+// 选区完成:从全屏图裁剪
+ipcMain.handle('capture:region-select', async (_e, selection: {
+  x: number; y: number; width: number; height: number; displayId: number
+}) => {
+  closeOverlays()
+
+  // 找到对应显示器的全屏截图
+  const displays = screen.getAllDisplays()
+  const displayIdx = displays.findIndex((d) => d.id === selection.displayId)
+  if (displayIdx < 0) return null
+
+  // 重新截取该显示器全屏图(overlay 传来的 imageData 已在 overlay 关闭后失效)
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: 9999, height: 9999 },
+    fetchWindowIcons: false,
+  })
+
+  // 匹配显示器(按 display_id 或索引)
+  const source = sources.find((s) => s.display_id === String(selection.displayId)) ?? sources[displayIdx] ?? sources[0]
+  if (!source || source.thumbnail.isEmpty()) return null
+
+  const fullImg = source.thumbnail
+  const fullSize = fullImg.getSize()
+
+  // 显示器缩放比:desktopCapturer 截图可能是 2x(retina),需要换算
+  const display = displays[displayIdx]
+  const scaleFactor = display.scaleFactor || 1
+
+  const cropX = Math.max(0, Math.round(selection.x * scaleFactor))
+  const cropY = Math.max(0, Math.round(selection.y * scaleFactor))
+  const cropW = Math.min(Math.round(selection.width * scaleFactor), fullSize.width - cropX)
+  const cropH = Math.min(Math.round(selection.height * scaleFactor), fullSize.height - cropY)
+
+  if (cropW <= 0 || cropH <= 0) return null
+
+  const cropped = fullImg.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
+
+  const record = await saveCapture(cropped, 'region')
+  createPinWindow(record, display.bounds.x + selection.x, display.bounds.y + selection.y)
+  return record.id
+})
+
+ipcMain.handle('capture:cancel', () => {
+  closeOverlays()
+  return true
+})
+
+// 贴图窗口:保存到历史(写图层数据 + 通知主窗口)
+ipcMain.handle('pin:save-to-history', async (_e, payload: {
+  tabId: string
+  layersJson: string | null
+  mergedDataUrl: string | null
+}) => {
+  const { tabId, layersJson, mergedDataUrl } = payload
+  const layersPath = path.join(SCREENSHOTS_DIR, `${tabId}.json`)
+  if (layersJson) {
+    writeFileSync(layersPath, layersJson)
+  }
+  // 若有合并图(含标注),覆盖原 PNG + 重新生成缩略图
+  if (mergedDataUrl) {
+    const primaryPath = path.join(SCREENSHOTS_DIR, `${tabId}.png`)
+    const thumbPath = path.join(SCREENSHOTS_DIR, `${tabId}.thumb.png`)
+    const img = nativeImage.createFromDataURL(mergedDataUrl)
+    writeFileSync(primaryPath, img.toPNG())
+    const thumb = img.resize({ width: Math.min(200, img.getSize().width) })
+    writeFileSync(thumbPath, thumb.toPNG())
+  }
+  return true
+})
+
+// 贴图窗口:关闭
+ipcMain.handle('pin:close', (_e, tabId: string) => {
+  const entry = pinWindows.find((p) => p.tabId === tabId)
+  if (entry && !entry.win.isDestroyed()) entry.win.close()
+  return true
+})
+
+// 另存为:弹系统对话框
+ipcMain.handle('screenshot:saveAs', async (_e, payload: { sourcePath: string; defaultName: string }) => {
+  const { sourcePath, defaultName } = payload
+  if (!existsSync(sourcePath)) return null
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow!, {
+    defaultPath: defaultName.endsWith('.png') ? defaultName : `${defaultName}.png`,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }],
+  })
+  if (canceled || !filePath) return null
+  const data = readFileSync(sourcePath)
+  writeFileSync(filePath, data)
+  return filePath
+})
+
+// 复制图片到剪贴板
+ipcMain.handle('screenshot:copyToClipboard', (_e, filePath: string) => {
+  if (!existsSync(filePath)) return false
+  const img = nativeImage.createFromPath(filePath)
+  clipboard.writeImage(img)
+  return true
+})
+
+// 读取截图文件为 base64(供编辑器/历史墙加载)
+ipcMain.handle('screenshot:readFile', (_e, filePath: string) => {
+  if (!existsSync(filePath)) return null
+  const data = readFileSync(filePath)
+  return 'data:image/png;base64,' + data.toString('base64')
+})
+
+// 删除截图记录(磁盘文件 + 索引由 store 处理)
+ipcMain.handle('screenshot:deleteFiles', (_e, tabId: string) => {
+  const dir = SCREENSHOTS_DIR
+  for (const suffix of ['.png', '.thumb.png', '.json']) {
+    const p = path.join(dir, `${tabId}${suffix}`)
+    try { unlinkSync(p) } catch { /* 不存在无妨 */ }
+  }
+  return true
+})
+
+// 保存编辑器结果(写图层 JSON + 覆盖合并图 PNG + 重新生成缩略图)
+ipcMain.handle('screenshot:save', async (_e, payload: {
+  tabId: string
+  layersJson: string
+  mergedDataUrl: string
+}) => {
+  const { tabId, layersJson, mergedDataUrl } = payload
+  const layersPath = path.join(SCREENSHOTS_DIR, `${tabId}.json`)
+  const primaryPath = path.join(SCREENSHOTS_DIR, `${tabId}.png`)
+  const thumbPath = path.join(SCREENSHOTS_DIR, `${tabId}.thumb.png`)
+
+  // 写图层 JSON
+  writeFileSync(layersPath, layersJson)
+
+  // 覆盖合并图 PNG
+  const img = nativeImage.createFromDataURL(mergedDataUrl)
+  writeFileSync(primaryPath, img.toPNG())
+
+  // 重新生成缩略图
+  const thumb = img.resize({ width: Math.min(200, img.getSize().width) })
+  writeFileSync(thumbPath, thumb.toPNG())
+
+  return true
+})
+
 // ============ 退出前 flush 工作区 ============
 // app.exit(0) 不触发 before-quit(见 Electron 文档),自动更新安装时需显式 flush。
 // before-quit 场景(⌘Q/关窗)也复用此机制:发 app:flush → 等渲染进程 app:flushed。
@@ -349,13 +771,22 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // 注册截图全局快捷键
+  registerShortcuts(readShortcuts())
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll()
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 应用退出前注销所有全局快捷键
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
 
 // 鼠标后退/前进侧键(macOS):转发给渲染进程做标签导航

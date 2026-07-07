@@ -11,7 +11,7 @@
     "dev": "vite",
     "dev:electron": "npm run build:electron && electron .",
     "build": "tsc -b && vite build",
-    "build:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
+    "build:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json && tsc -p electron/tsconfig.pin-preload.json",
     "preview": "vite preview",
     "start": "npm run build:electron && electron .",
     "start:prod": "npm run build && npm run build:electron && electron .",
@@ -33,7 +33,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "hardenedRuntime": false,
@@ -42,12 +44,21 @@
     "dmg": {
       "title": "${productName} ${version}",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
   "dependencies": {
+    "fabric": "^6.9.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^4.5.5"

@@ -13,6 +13,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        pin: path.resolve(__dirname, 'pin.html'),
+        overlay: path.resolve(__dirname, 'overlay.html'),
+      },
+    },
   },
   server: {
     port: 5173,

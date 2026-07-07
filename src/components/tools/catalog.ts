@@ -12,6 +12,7 @@ export type ToolCategoryId =
   | 'codegen'
   | 'text'
   | 'network'
+  | 'media'
 
 export interface ToolCategory {
   id: ToolCategoryId
@@ -34,6 +35,7 @@ export const CATEGORIES: ToolCategory[] = [
   { id: 'codegen', name: '代码生成', icon: 'codegen' },
   { id: 'text', name: '文本处理', icon: 'text' },
   { id: 'network', name: '网络工具', icon: 'network' },
+  { id: 'media', name: '截图媒体', icon: 'media' },
 ]
 
 export const TOOLS: ToolDef[] = [
@@ -101,6 +103,13 @@ export const TOOLS: ToolDef[] = [
     categoryId: 'codegen',
     name: 'JSON → Java POJO',
     loader: () => import('@/components/tools/json-to-pojo'),
+  },
+  // 截图媒体
+  {
+    id: 'screenshot',
+    categoryId: 'media',
+    name: '截图工具',
+    loader: () => import('@/components/tools/screenshot'),
   },
 ]
 

@@ -28,6 +28,14 @@ export interface UpdateProgress {
   total: number
 }
 
+/** 快捷键映射 */
+export interface ShortcutMap {
+  captureRegion: string
+  captureScreen: string
+  captureWindow: string
+  togglePins: string
+}
+
 export interface RaintoolAPI {
   // 持久化存储(收藏夹 / 配置)
   storeGet: (key: string) => Promise<unknown>
@@ -56,6 +64,34 @@ export interface RaintoolAPI {
 
   // 鼠标后退/前进侧键:订阅方向事件(-1 后退 / 1 前进)
   onMouseNav: (cb: (direction: number) => void) => () => void
+
+  // ===== 截图功能 =====
+  /** 读取快捷键设置 */
+  getShortcuts: () => Promise<ShortcutMap>
+  /** 更新快捷键(主进程重新注册),返回是否成功 */
+  updateShortcuts: (map: ShortcutMap) => Promise<boolean>
+  /** 检查快捷键是否被系统占用,true=冲突 */
+  checkShortcutConflict: (accel: string) => Promise<boolean>
+
+  /** 读取截图文件为 dataURL */
+  readScreenshotFile: (filePath: string) => Promise<string | null>
+  /** 弹系统对话框另存截图 */
+  saveScreenshotAs: (sourcePath: string, defaultName: string) => Promise<string | null>
+  /** 复制图片到系统剪贴板 */
+  copyScreenshotToClipboard: (filePath: string) => Promise<boolean>
+  /** 删除截图相关的磁盘文件 */
+  deleteScreenshotFiles: (tabId: string) => Promise<boolean>
+
+  /** 保存编辑器结果(写图层 JSON + 覆盖合并图 PNG + 重新生成缩略图) */
+  saveScreenshot: (tabId: string, layersJson: string, mergedDataUrl: string) => Promise<boolean>
+
+  // ===== 区域截图选区窗口(overlay) =====
+  /** 接收主进程的初始化数据 */
+  onOverlayInit: (cb: (data: { display: { x: number; y: number; width: number; height: number; id: number }; imageData: string | null }) => void) => () => void
+  /** 确认选区 */
+  confirmRegionCapture: (selection: { x: number; y: number; width: number; height: number; displayId: number }) => Promise<string | null>
+  /** 取消截图 */
+  cancelCapture: () => Promise<boolean>
 }
 
 declare global {

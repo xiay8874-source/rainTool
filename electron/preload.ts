@@ -40,6 +40,43 @@ const api = {
     // 返回取消订阅函数
     return () => ipcRenderer.removeListener('nav:mouse', listener)
   },
+
+  // ===== 截图功能 =====
+  // 快捷键:读取 / 更新(主进程重新注册) / 冲突检测
+  getShortcuts: () => ipcRenderer.invoke('shortcut:get'),
+  updateShortcuts: (map: Record<string, string>) => ipcRenderer.invoke('shortcut:update', map),
+  checkShortcutConflict: (accel: string) => ipcRenderer.invoke('shortcut:checkConflict', accel),
+
+  // 截图文件读取(返回 dataURL)
+  readScreenshotFile: (filePath: string) => ipcRenderer.invoke('screenshot:readFile', filePath),
+
+  // 另存为(弹系统对话框)
+  saveScreenshotAs: (sourcePath: string, defaultName: string) =>
+    ipcRenderer.invoke('screenshot:saveAs', { sourcePath, defaultName }),
+
+  // 复制图片到剪贴板
+  copyScreenshotToClipboard: (filePath: string) =>
+    ipcRenderer.invoke('screenshot:copyToClipboard', filePath),
+
+  // 删除截图磁盘文件
+  deleteScreenshotFiles: (tabId: string) => ipcRenderer.invoke('screenshot:deleteFiles', tabId),
+
+  // 保存编辑器结果(写图层 JSON + 覆盖合并图 + 重新生成缩略图)
+  saveScreenshot: (tabId: string, layersJson: string, mergedDataUrl: string) =>
+    ipcRenderer.invoke('screenshot:save', { tabId, layersJson, mergedDataUrl }),
+
+  // ===== 区域截图选区窗口(overlay) =====
+  // 接收主进程的初始化数据(显示器信息 + 截图 dataURL)
+  onOverlayInit: (cb: (data: { display: { x: number; y: number; width: number; height: number; id: number }; imageData: string | null }) => void) => {
+    const listener = (_e: unknown, data: { display: { x: number; y: number; width: number; height: number; id: number }; imageData: string | null }) => cb(data)
+    ipcRenderer.on('overlay:init', listener)
+    return () => ipcRenderer.removeListener('overlay:init', listener)
+  },
+  // 确认选区,提交给主进程裁剪
+  confirmRegionCapture: (selection: { x: number; y: number; width: number; height: number; displayId: number }) =>
+    ipcRenderer.invoke('capture:region-select', selection),
+  // 取消截图
+  cancelCapture: () => ipcRenderer.invoke('capture:cancel'),
 }
 
 contextBridge.exposeInMainWorld('raintool', api)
