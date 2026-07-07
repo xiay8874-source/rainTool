@@ -26,25 +26,11 @@ export function Editor({ tabId, onBack }: { tabId: string; onBack: () => void })
       if (url) setImageData(url)
     })
 
-    // 加载图层数据(如果有)
-    // 图层 JSON 存在 <id>.json,通过 readFile 读取
-    // 但 readFile 只读 png — 需要一个读 JSON 的 IPC
-    // 简化:用 storeGet 读?不行,JSON 是独立文件
-    // 用 screenshot:readFile 读 .json 文件(它返回 base64 dataURL)
-    // 但 .json 不是图片 — 需要另一个 IPC
-    // 最简:主进程加一个 screenshot:readJson IPC
-    // 暂时通过 readScreenshotFile 读 .json(它返回 base64 dataURL,解析出 JSON)
+    // 加载已保存的图层数据(如果有)
+    // readScreenshotFile 对 .json 文件返回原始文本,对 .png 返回 dataURL
     if (record.layers) {
-      const layersPath = record.layers
-      window.raintool?.readScreenshotFile(layersPath).then((url) => {
-        if (url) {
-          // url 是 data:...;base64,xxx 格式,解析出 JSON 字符串
-          try {
-            const base64 = url.split(',')[1]
-            const json = atob(base64)
-            setLayersData(json)
-          } catch { /* ignore */ }
-        }
+      window.raintool?.readScreenshotFile(record.layers).then((content) => {
+        if (content) setLayersData(content)
       })
     }
   }, [record, loaded])
@@ -59,8 +45,9 @@ export function Editor({ tabId, onBack }: { tabId: string; onBack: () => void })
     // 写图层 JSON 和合并 PNG 到磁盘
     await window.raintool.saveScreenshot(tabId, layersJson, dataUrl)
 
-    // 更新 store 记录
-    updateRecord(tabId, { layers: `${tabId}.json` })
+    // 更新 store 记录(layers 存完整路径)
+    const layersPath = record.primary.replace(/\.png$/, '.json')
+    updateRecord(tabId, { layers: layersPath })
 
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)

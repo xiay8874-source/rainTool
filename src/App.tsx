@@ -107,6 +107,14 @@ export default function App() {
     return () => unsub?.()
   }, [])
 
+  // 截图创建完成:主进程通知 → 添加到 screenshots store
+  useEffect(() => {
+    const unsub = window.raintool?.onScreenshotCreated?.((record) => {
+      useScreenshotStore.getState().addRecord(record)
+    })
+    return () => unsub?.()
+  }, [])
+
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-bg-app">
       <IconRail />

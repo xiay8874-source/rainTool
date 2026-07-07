@@ -1,18 +1,9 @@
 import { create } from 'zustand'
+import type { ScreenshotRecord } from '@/types/raintool'
 
-// ============ 截图记录 ============
+// ============ 截图记录(ScreenshotRecord 已在 raintool.d.ts 定义) ============
 
-export interface ScreenshotRecord {
-  id: string
-  name: string
-  createdAt: number
-  source: 'fullscreen' | 'region' | 'window'
-  primary: string   // ~/raintool/tabs/screenshots/<id>.png
-  thumb: string     // ~/raintool/tabs/screenshots/<id>.thumb.png
-  layers: string | null  // ~/raintool/tabs/screenshots/<id>.json,null = 未编辑
-  width: number
-  height: number
-}
+export type { ScreenshotRecord }
 
 interface ScreenshotState {
   records: ScreenshotRecord[]

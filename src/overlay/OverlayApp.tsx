@@ -16,6 +16,7 @@ export function OverlayApp() {
   const [displayInfo, setDisplayInfo] = useState<DisplayInfo | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
   const dragRef = useRef<{ startX: number; startY: number } | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
     const unsub = window.raintool.onOverlayInit((data) => {
@@ -47,13 +48,19 @@ export function OverlayApp() {
   const confirmSelection = async () => {
     if (!selection || selection.width < 5 || selection.height < 5) return
     if (!displayInfo) return
-    await window.raintool.confirmRegionCapture({
-      x: selection.x,
-      y: selection.y,
-      width: selection.width,
-      height: selection.height,
-      displayId: displayInfo.display.id,
-    })
+    if (confirming) return // 防止重复触发
+    setConfirming(true)
+    try {
+      await window.raintool.confirmRegionCapture({
+        x: selection.x,
+        y: selection.y,
+        width: selection.width,
+        height: selection.height,
+        displayId: displayInfo.display.id,
+      })
+    } catch {
+      setConfirming(false)
+    }
   }
 
   const cancel = () => {
@@ -67,7 +74,7 @@ export function OverlayApp() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selection, displayInfo])
+  }, [selection, displayInfo, confirming])
 
   const maskColor = 'rgba(0,0,0,0.4)'
 
@@ -76,7 +83,7 @@ export function OverlayApp() {
       style={{
         width: '100vw', height: '100vh', position: 'relative',
         cursor: 'crosshair', overflow: 'hidden',
-        userSelect: 'none',
+        userSelect: 'none', background: 'transparent',
       }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
@@ -105,19 +112,17 @@ export function OverlayApp() {
           </div>
         </>
       ) : (
-        <div style={{
-          position: 'absolute', top: '50%', left: '50%',
-          transform: 'translate(-50%, -50%)',
-          color: '#fff', fontSize: 14, background: 'rgba(0,0,0,0.6)',
-          padding: '6px 12px', borderRadius: 6,
-        }}>
-          拖拽选择截图区域 · Enter 确认 · Esc 取消
-        </div>
-      )}
-
-      {/* 全局遮罩(无选区时) */}
-      {!selection && (
-        <div style={{ position: 'absolute', inset: 0, background: maskColor, pointerEvents: 'none' }} />
+        <>
+          <div style={{ position: 'absolute', inset: 0, background: maskColor, pointerEvents: 'none' }} />
+          <div style={{
+            position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: '#fff', fontSize: 14, background: 'rgba(0,0,0,0.6)',
+            padding: '6px 12px', borderRadius: 6,
+          }}>
+            拖拽选择截图区域 · Enter 确认 · Esc 取消
+          </div>
+        </>
       )}
     </div>
   )

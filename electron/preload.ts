@@ -77,6 +77,13 @@ const api = {
     ipcRenderer.invoke('capture:region-select', selection),
   // 取消截图
   cancelCapture: () => ipcRenderer.invoke('capture:cancel'),
+
+  // 截图创建完成通知(主进程 → 主窗口,通知 screenshots store 添加记录)
+  onScreenshotCreated: (cb: (record: unknown) => void) => {
+    const listener = (_e: unknown, record: unknown) => cb(record)
+    ipcRenderer.on('screenshot:created', listener)
+    return () => ipcRenderer.removeListener('screenshot:created', listener)
+  },
 }
 
 contextBridge.exposeInMainWorld('raintool', api)

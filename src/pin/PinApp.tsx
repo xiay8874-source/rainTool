@@ -20,8 +20,6 @@ export function PinApp() {
 
   const fabric = useFabric({
     backgroundImage: imageData ?? undefined,
-    width: pinData ? undefined : 400,
-    height: pinData ? undefined : 300,
   })
 
   // 接收主进程传来的截图信息
@@ -35,16 +33,13 @@ export function PinApp() {
     return () => unsub()
   }, [])
 
-  // 鼠标拖拽移动窗口 — 通过 CSS -webkit-app-region: drag 实现(见下方 style)
-  // 不需要 JS 处理
-
   // 双击进入标注态
   const onDoubleClick = () => {
     setAnnotating(true)
     setShowToolbar(true)
   }
 
-  // Esc / 点外部退出标注
+  // Esc 退出标注
   useEffect(() => {
     if (!annotating) return
     const onKey = (e: KeyboardEvent) => {
@@ -57,46 +52,28 @@ export function PinApp() {
     return () => window.removeEventListener('keydown', onKey)
   }, [annotating])
 
-  // 保存到历史
+  // 保存到历史:序列化图层 + 合并图,通过 IPC 传给主进程写盘
   const handleSave = async () => {
     if (!pinData) return
     const layersJson = fabric.toJSON()
     const dataUrl = fabric.toDataURL()
     if (!dataUrl) return
 
-    // 将合并图写到临时文件(主进程会拷贝到 primary)
-    // 用 dataURL 传给主进程太长,这里通过 layersJson + dataUrl 组合
-    // 主进程 pin:save-to-history 接收 layersJson 和临时路径
-    // 简化:直接传 dataUrl,主进程转存 — 但主进程没这个接口
-    // 改为:写一个临时文件路径传过去
-    // 实际上主进程 saveToHistory 需要文件路径,我们用 dataURL 写一个 Blob URL 不行
-    // 最简方案:用 layersJson 通过 IPC,合并图用 base64 传
-
-    // 重新设计:主进程 pin:save-to-history 已改为接受 layersJson + mergedPngPath
-    // mergedPngPath 需要是一个磁盘文件。我们在 pin 窗口写不了文件(nodeIntegration=false)
-    // 解决:新增一个 IPC 接受 base64 合并图
-    // 但为了简化,这里只传 layersJson,合并图由主进程从 fabric canvas 重新渲染
-    // 实际上 fabric 渲染在渲染进程,主进程无法重做
-    // 最简:传 dataURL,主进程用 nativeImage.createFromDataURL 转存
-
     await window.pin.saveToHistory(pinData.id, layersJson, dataUrl)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
 
-  // 复制到剪贴板
   const handleCopy = async () => {
     if (!pinData) return
     await window.pin.copyToClipboard(pinData.filePath)
   }
 
-  // 另存为
   const handleSaveAs = async () => {
     if (!pinData) return
     await window.pin.saveAs(pinData.filePath, pinData.name)
   }
 
-  // 关闭
   const handleClose = async () => {
     if (!pinData) return
     await window.pin.close(pinData.id)
@@ -121,7 +98,7 @@ export function PinApp() {
       onMouseEnter={() => !annotating && setShowToolbar(true)}
       onMouseLeave={() => !annotating && setShowToolbar(false)}
     >
-      {/* fabric 画布 */}
+      {/* fabric 画布(useFabric 会根据底图尺寸自动设置 canvas 尺寸) */}
       <canvas
         ref={fabric.canvasRef}
         style={{ position: 'absolute', top: 0, left: 0 }}
@@ -227,10 +204,8 @@ function PinToolbar({ fabric, onSave, onClose }: {
         </button>
       ))}
 
-      {/* 分隔线 */}
       <div style={{ width: 1, background: '#374151', margin: '0 4px' }} />
 
-      {/* 颜色 */}
       {PALETTE.map((c) => (
         <button
           key={c}
@@ -245,10 +220,8 @@ function PinToolbar({ fabric, onSave, onClose }: {
         />
       ))}
 
-      {/* 分隔线 */}
       <div style={{ width: 1, background: '#374151', margin: '0 4px' }} />
 
-      {/* 线宽 */}
       {(['thin', 'medium', 'thick'] as LineWidth[]).map((lw) => (
         <button
           key={lw}
@@ -267,10 +240,8 @@ function PinToolbar({ fabric, onSave, onClose }: {
         </button>
       ))}
 
-      {/* 分隔线 */}
       <div style={{ width: 1, background: '#374151', margin: '0 4px' }} />
 
-      {/* 撤销 */}
       <button
         onClick={fabric.undo}
         title="撤销"
@@ -281,7 +252,6 @@ function PinToolbar({ fabric, onSave, onClose }: {
         }}
       >↶</button>
 
-      {/* 保存 */}
       <button
         onClick={onSave}
         title="保存到历史"
@@ -292,7 +262,6 @@ function PinToolbar({ fabric, onSave, onClose }: {
         }}
       >💾</button>
 
-      {/* 关闭标注 */}
       <button
         onClick={onClose}
         title="退出标注"

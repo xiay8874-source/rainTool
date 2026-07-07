@@ -44,15 +44,13 @@ export interface UseFabricOptions {
   backgroundImage?: string
   /** 初始图层 JSON(从已保存的图层恢复) */
   initialLayers?: string | null
-  /** 尺寸 */
-  width?: number
-  height?: number
 }
 
 export function useFabric(opts: UseFabricOptions = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<fabric.Canvas | null>(null)
   const [ready, setReady] = useState(false)
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null)
 
   // 绘图状态
   const [tool, setTool] = useState<DrawTool>('rect')
@@ -68,12 +66,15 @@ export function useFabric(opts: UseFabricOptions = {}) {
     isDrawing: boolean
   }>({ startX: 0, startY: 0, obj: null, isDrawing: false })
 
-  // 初始化 fabric canvas
+  // 初始化 fabric canvas(仅一次)
   useEffect(() => {
     if (!canvasRef.current) return
     const canvas = new fabric.Canvas(canvasRef.current, {
       selection: false,
       preserveObjectStacking: true,
+      // 初始尺寸设为 1x1,等底图加载后再设真实尺寸
+      width: 1,
+      height: 1,
     })
     fabricRef.current = canvas
     setReady(true)
@@ -84,37 +85,40 @@ export function useFabric(opts: UseFabricOptions = {}) {
     }
   }, [])
 
-  // 加载底图
+  // 加载底图 — 同时设置画布尺寸为图片尺寸
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas || !opts.backgroundImage) return
 
     fabric.Image.fromURL(opts.backgroundImage).then((img) => {
+      const width = img.width || 1
+      const height = img.height || 1
+      // 设置画布尺寸 = 图片尺寸
+      canvas.setWidth(width)
+      canvas.setHeight(height)
       canvas.backgroundImage = img
       canvas.renderAll()
+      setCanvasSize({ width, height })
+
+      // 如果有已保存的图层,加载(尺寸设好后才能正确渲染)
+      if (opts.initialLayers) {
+        try {
+          canvas.loadFromJSON(opts.initialLayers).then(() => {
+            canvas.renderAll()
+            // 恢复序号计数器
+            let maxNum = 0
+            canvas.getObjects().forEach((obj) => {
+              const n = (obj as unknown as { _numberLabel?: number })._numberLabel
+              if (typeof n === 'number' && n > maxNum) maxNum = n
+            })
+            numberCounter.current = maxNum + 1
+          })
+        } catch {
+          /* 加载失败忽略 */
+        }
+      }
     })
-  }, [opts.backgroundImage])
-
-  // 加载已保存的图层
-  useEffect(() => {
-    const canvas = fabricRef.current
-    if (!canvas || !opts.initialLayers || !ready) return
-
-    try {
-      canvas.loadFromJSON(opts.initialLayers).then(() => {
-        canvas.renderAll()
-        // 恢复序号计数器:扫描已有 number 对象
-        let maxNum = 0
-        canvas.getObjects().forEach((obj) => {
-          const n = (obj as unknown as { _numberLabel?: number })._numberLabel
-          if (typeof n === 'number' && n > maxNum) maxNum = n
-        })
-        numberCounter.current = maxNum + 1
-      })
-    } catch {
-      /* 加载失败忽略 */
-    }
-  }, [opts.initialLayers, ready])
+  }, [opts.backgroundImage, opts.initialLayers])
 
   // ---- 创建各种图形对象的工厂 ----
 
@@ -128,7 +132,7 @@ export function useFabric(opts: UseFabricOptions = {}) {
 
     return new fabric.Path(
       `M ${x1} ${y1} L ${x2} ${y2} M ${x2} ${y2} L ${headX1} ${headY1} M ${x2} ${y2} L ${headX2} ${headY2}`,
-      { stroke, strokeWidth: width, fill: 'transparent' },
+      { stroke, strokeWidth: width, fill: '' },
     )
   }, [])
 
@@ -201,16 +205,15 @@ export function useFabric(opts: UseFabricOptions = {}) {
       }
 
       if (tool === 'pen') {
-        const path = new fabric.PencilBrush(canvas)
-        path.color = color
-        path.width = lw
-        canvas.freeDrawingBrush = path
+        const brush = new fabric.PencilBrush(canvas)
+        brush.color = color
+        brush.width = lw
+        canvas.freeDrawingBrush = brush
         canvas.isDrawingMode = true
         return
       }
 
       if (tool === 'eraser') {
-        // 点击删除对象
         const target = canvas.findTarget(e.e)
         if (target) {
           canvas.remove(target)
@@ -225,12 +228,12 @@ export function useFabric(opts: UseFabricOptions = {}) {
       if (tool === 'rect') {
         obj = new fabric.Rect({
           left: pointer.x, top: pointer.y, width: 0, height: 0,
-          fill: 'transparent', stroke: color, strokeWidth: lw,
+          fill: '', stroke: color, strokeWidth: lw,
         })
       } else if (tool === 'ellipse') {
         obj = new fabric.Ellipse({
           left: pointer.x, top: pointer.y, rx: 0, ry: 0,
-          fill: 'transparent', stroke: color, strokeWidth: lw,
+          fill: '', stroke: color, strokeWidth: lw,
         })
       } else if (tool === 'line') {
         obj = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
@@ -238,19 +241,18 @@ export function useFabric(opts: UseFabricOptions = {}) {
         })
       } else if (tool === 'arrow') {
         obj = new fabric.Path(`M ${pointer.x} ${pointer.y} L ${pointer.x} ${pointer.y}`, {
-          stroke: color, strokeWidth: lw, fill: 'transparent',
+          stroke: color, strokeWidth: lw, fill: '',
         })
       } else if (tool === 'highlight') {
         obj = new fabric.Rect({
           left: pointer.x, top: pointer.y, width: 0, height: LINE_WIDTH_MAP['thick'] * 2,
-          fill: color, stroke: 'transparent', strokeWidth: 0,
+          fill: color, stroke: '', strokeWidth: 0,
           opacity: 0.35,
         })
       } else if (tool === 'mosaic') {
-        // 马赛克:用半透明矩形占位,松手时栅格化
         obj = new fabric.Rect({
           left: pointer.x, top: pointer.y, width: 0, height: 0,
-          fill: 'rgba(128,128,128,0.6)', stroke: 'transparent', strokeWidth: 0,
+          fill: 'rgba(128,128,128,0.6)', stroke: '', strokeWidth: 0,
         })
       }
 
@@ -288,7 +290,6 @@ export function useFabric(opts: UseFabricOptions = {}) {
         line.set({ x2: pointer.x, y2: pointer.y })
         line.setCoords()
       } else if (tool === 'arrow') {
-        // 重建箭头 path
         const stroke = color
         const lw = LINE_WIDTH_MAP[lineWidth]
         const newObj = createArrow(startX, startY, pointer.x, pointer.y, stroke, lw)
@@ -311,7 +312,6 @@ export function useFabric(opts: UseFabricOptions = {}) {
           const w = mosaicObj.width || 1
           const h = mosaicObj.height || 1
           if (w > 5 && h > 5) {
-            // 将区域转为马赛克像素块
             const blockSize = 8
             const cols = Math.ceil(w / blockSize)
             const rows = Math.ceil(h / blockSize)
@@ -323,7 +323,7 @@ export function useFabric(opts: UseFabricOptions = {}) {
                   width: blockSize,
                   height: blockSize,
                   fill: ['rgba(0,0,0,0.15)', 'rgba(255,255,255,0.1)', 'rgba(128,128,128,0.2)'][(r + c) % 3],
-                  stroke: 'transparent',
+                  stroke: '',
                   strokeWidth: 0,
                   selectable: true,
                 })
@@ -355,7 +355,6 @@ export function useFabric(opts: UseFabricOptions = {}) {
   const redoStack = useRef<string[]>([])
   const isUndoRedoing = useRef(false)
 
-  // 记录状态(在操作完成后调用)
   const saveState = useCallback(() => {
     const canvas = fabricRef.current
     if (!canvas || isUndoRedoing.current) return
@@ -409,6 +408,7 @@ export function useFabric(opts: UseFabricOptions = {}) {
     canvasRef,
     fabricRef,
     ready,
+    canvasSize,
     tool, setTool,
     color, setColor,
     lineWidth, setLineWidth,

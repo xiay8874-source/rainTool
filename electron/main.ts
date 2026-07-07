@@ -347,9 +347,10 @@ async function saveCapture(img: Electron.NativeImage, source: CaptureMode): Prom
   id: string
   name: string
   createdAt: number
-  source: CaptureMode
+  source: 'fullscreen' | 'region' | 'window'
   primary: string
   thumb: string
+  layers: string | null
   width: number
   height: number
 }> {
@@ -362,10 +363,22 @@ async function saveCapture(img: Electron.NativeImage, source: CaptureMode): Prom
   const thumb = img.resize({ width: Math.min(200, width) })
   writeFileSync(thumbPath, thumb.toPNG())
 
-  return {
+  // 'screen' → 'fullscreen' 匹配 store 类型
+  const storeSource = source === 'screen' ? 'fullscreen' : source
+
+  const record = {
     id, name: `截图 ${formatTimestamp()}`, createdAt: Date.now(),
-    source, primary: primaryPath, thumb: thumbPath, width, height,
+    source: storeSource as 'fullscreen' | 'region' | 'window',
+    primary: primaryPath, thumb: thumbPath, layers: null,
+    width, height,
   }
+
+  // 通知主窗口的截图 store 添加记录
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('screenshot:created', record)
+  }
+
+  return record
 }
 
 /** 创建贴图窗口并加载截图 */
@@ -376,11 +389,18 @@ function createPinWindow(record: {
   width: number
   height: number
 }, x?: number, y?: number): void {
+  // 设置窗口尺寸上限,避免超大截图导致窗口超出屏幕
+  const maxDim = 2000
+  const scaleW = record.width > maxDim ? maxDim / record.width : 1
+  const scaleH = record.height > maxDim ? maxDim / record.height : 1
+  const scale = Math.min(scaleW, scaleH)
   const win = new BrowserWindow({
-    width: record.width,
-    height: record.height,
+    width: Math.round(record.width * scale),
+    height: Math.round(record.height * scale),
     x: x ?? undefined,
     y: y ?? undefined,
+    minWidth: 50,
+    minHeight: 50,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -493,7 +513,7 @@ async function startRegionCapture(sources: Electron.DesktopCapturerSource[]): Pr
       movable: false,
       resizable: false,
       skipTaskbar: true,
-      backgroundColor: '#00000000',
+      transparent: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -634,11 +654,18 @@ ipcMain.handle('screenshot:copyToClipboard', (_e, filePath: string) => {
   return true
 })
 
-// 读取截图文件为 base64(供编辑器/历史墙加载)
+// 读取截图文件为 base64 dataURL(供编辑器/历史墙加载)
 ipcMain.handle('screenshot:readFile', (_e, filePath: string) => {
   if (!existsSync(filePath)) return null
   const data = readFileSync(filePath)
-  return 'data:image/png;base64,' + data.toString('base64')
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext === '.json') {
+    // JSON 文件:返回原始文本(非 dataURL),供 fabric loadFromJSON 解析
+    return data.toString('utf8')
+  }
+  // 图片文件:返回 dataURL
+  const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png'
+  return 'data:' + mime + ';base64,' + data.toString('base64')
 })
 
 // 删除截图记录(磁盘文件 + 索引由 store 处理)

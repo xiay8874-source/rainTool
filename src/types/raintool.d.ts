@@ -92,6 +92,22 @@ export interface RaintoolAPI {
   confirmRegionCapture: (selection: { x: number; y: number; width: number; height: number; displayId: number }) => Promise<string | null>
   /** 取消截图 */
   cancelCapture: () => Promise<boolean>
+
+  /** 截图创建完成通知(主进程 → 主窗口) */
+  onScreenshotCreated: (cb: (record: ScreenshotRecord) => void) => () => void
+}
+
+/** 截图记录(与 store/screenshots.ts 的 ScreenshotRecord 一致) */
+export interface ScreenshotRecord {
+  id: string
+  name: string
+  createdAt: number
+  source: 'fullscreen' | 'region' | 'window'
+  primary: string
+  thumb: string
+  layers: string | null
+  width: number
+  height: number
 }
 
 declare global {
