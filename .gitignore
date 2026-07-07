@@ -42,3 +42,5 @@ pnpm-debug.log*
 coverage/
 *.pid
 .secrets/
+.superpowers/
+.playwright-mcp/
