@@ -426,6 +426,12 @@ async function startCapture(mode: CaptureMode): Promise<void> {
       fetchWindowIcons: false,
     })
 
+    // macOS 屏幕录制权限检测:无权限时 sources 为空或 thumbnail 为空
+    if (!sources || sources.length === 0 || sources.every((s) => s.thumbnail.isEmpty())) {
+      notifyCaptureError('无法截取屏幕。请在「系统设置 → 隐私与安全 → 屏幕录制」中允许 RainTool,然后重启应用。')
+      return
+    }
+
     if (mode === 'screen') {
       for (const s of sources) {
         const img = s.thumbnail
@@ -437,9 +443,7 @@ async function startCapture(mode: CaptureMode): Promise<void> {
     }
 
     if (mode === 'window') {
-      // 单显示器:取第一个窗口源
       if (sources.length === 0) return
-      // 若多窗口,取第一个(活动窗口)
       const s = sources[0]
       const img = s.thumbnail
       if (img.isEmpty()) return
@@ -451,7 +455,21 @@ async function startCapture(mode: CaptureMode): Promise<void> {
     // region:创建选区覆盖窗口
     await startRegionCapture(sources)
   } catch (e) {
-    console.error('截图失败:', e)
+    // 不用 console.error — EPIPE 会导致二次崩溃
+    const msg = e instanceof Error ? e.message : String(e)
+    notifyCaptureError('截图失败:' + msg)
+  }
+}
+
+/** 截图失败时弹 dialog 提示用户(而非 console,避免 EPIPE) */
+function notifyCaptureError(message: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: '截图',
+      message,
+      buttons: ['知道了'],
+    }).catch(() => { /* ignore */ })
   }
 }
 
