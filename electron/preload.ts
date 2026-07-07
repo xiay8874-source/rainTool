@@ -84,6 +84,20 @@ const api = {
     ipcRenderer.on('screenshot:created', listener)
     return () => ipcRenderer.removeListener('screenshot:created', listener)
   },
+
+  // 贴图保存到历史后:打开截图工具标签页
+  onScreenshotOpenTab: (cb: (data: { tabId: string }) => void) => {
+    const listener = (_e: unknown, data: { tabId: string }) => cb(data)
+    ipcRenderer.on('screenshot:open-tab', listener)
+    return () => ipcRenderer.removeListener('screenshot:open-tab', listener)
+  },
+
+  // 截图记录更新(贴图保存后刷新 layers 路径)
+  onScreenshotUpdated: (cb: (data: { tabId: string; layers: string }) => void) => {
+    const listener = (_e: unknown, data: { tabId: string; layers: string }) => cb(data)
+    ipcRenderer.on('screenshot:updated', listener)
+    return () => ipcRenderer.removeListener('screenshot:updated', listener)
+  },
 }
 
 contextBridge.exposeInMainWorld('raintool', api)

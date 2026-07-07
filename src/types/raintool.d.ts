@@ -95,6 +95,12 @@ export interface RaintoolAPI {
 
   /** 截图创建完成通知(主进程 → 主窗口) */
   onScreenshotCreated: (cb: (record: ScreenshotRecord) => void) => () => void
+
+  /** 贴图保存到历史后:打开截图工具标签页 */
+  onScreenshotOpenTab: (cb: (data: { tabId: string }) => void) => () => void
+
+  /** 截图记录更新(贴图保存后刷新 layers 路径) */
+  onScreenshotUpdated: (cb: (data: { tabId: string; layers: string }) => void) => () => void
 }
 
 /** 截图记录(与 store/screenshots.ts 的 ScreenshotRecord 一致) */

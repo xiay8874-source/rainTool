@@ -475,22 +475,29 @@ async function startCapture(mode: CaptureMode): Promise<void> {
     // region:创建选区覆盖窗口
     await startRegionCapture(sources)
   } catch (e) {
-    // 不用 console.error — EPIPE 会导致二次崩溃
+    // desktopCapturer 抛 string "Failed to get sources." 而非 Error
     const msg = e instanceof Error ? e.message : String(e)
-    notifyCaptureError('截图失败:' + msg)
+    if (msg.includes('Failed to get sources') || msg.includes('undefined')) {
+      notifyCaptureError('无法截取屏幕。请在「系统设置 → 隐私与安全 → 屏幕录制」中允许 RainTool,然后重启应用。')
+    } else {
+      notifyCaptureError('截图失败:' + msg)
+    }
   }
 }
 
-/** 截图失败时弹 dialog 提示用户(而非 console,避免 EPIPE) */
+/** 截图失败时弹 dialog 提示用户 */
 function notifyCaptureError(message: string): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    dialog.showMessageBox(mainWindow, {
-      type: 'warning',
-      title: '截图',
-      message,
-      buttons: ['知道了'],
-    }).catch(() => { /* ignore */ })
-  }
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning', title: '截图', message, buttons: ['知道了'],
+      }).catch(() => {})
+    } else {
+      dialog.showMessageBoxSync({
+        type: 'warning', title: '截图', message, buttons: ['知道了'],
+      })
+    }
+  } catch { /* ignore */ }
 }
 
 // ---- 区域截图:选区覆盖窗口 ----
@@ -621,6 +628,12 @@ ipcMain.handle('pin:save-to-history', async (_e, payload: {
     writeFileSync(primaryPath, img.toPNG())
     const thumb = img.resize({ width: Math.min(200, img.getSize().width) })
     writeFileSync(thumbPath, thumb.toPNG())
+  }
+  // 通知主窗口:打开截图工具标签页(让用户在历史墙看到并编辑)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('screenshot:open-tab', { tabId })
+    // 同时刷新截图记录(更新 layers 路径)
+    mainWindow.webContents.send('screenshot:updated', { tabId, layers: layersPath })
   }
   return true
 })

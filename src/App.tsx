@@ -115,6 +115,29 @@ export default function App() {
     return () => unsub?.()
   }, [])
 
+  // 贴图保存到历史:打开截图工具标签页
+  useEffect(() => {
+    const unsub = window.raintool?.onScreenshotOpenTab?.(() => {
+      // 检查是否已有 screenshot 标签页打开
+      const store = useAppStore.getState()
+      const existing = store.tabs.find((t) => t.toolId === 'screenshot')
+      if (existing) {
+        store.setActiveTab(existing.id)
+      } else {
+        store.openTab('screenshot', '截图工具')
+      }
+    })
+    return () => unsub?.()
+  }, [])
+
+  // 截图记录更新:刷新 store 中的 layers 路径
+  useEffect(() => {
+    const unsub = window.raintool?.onScreenshotUpdated?.(({ tabId, layers }) => {
+      useScreenshotStore.getState().updateRecord(tabId, { layers })
+    })
+    return () => unsub?.()
+  }, [])
+
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-bg-app">
       <IconRail />
