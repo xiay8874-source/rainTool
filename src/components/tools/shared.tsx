@@ -5,6 +5,12 @@ export interface ToolProps {
   input: string
   onInput: (v: string) => void
   config?: string
+  /** 对比模式左侧(仅 json-workbench 用,独立于树形 input,持久化) */
+  diffLeft?: string
+  /** 对比模式右侧 */
+  diffRight?: string
+  onDiffLeft?: (v: string) => void
+  onDiffRight?: (v: string) => void
 }
 
 // 左输入右输出的通用布局

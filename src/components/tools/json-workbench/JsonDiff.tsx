@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { tolerantParse } from './parse'
+import { tolerantParse, repairJson } from './parse'
+import { deepUnescape } from './index'
 import { CodeArea, type CodeAreaHandle } from '../CodeArea'
 import { FindBar } from '../FindBar'
 import { escapeRegExp, type LineMark } from './highlight'
@@ -106,21 +107,68 @@ export function JsonDiff({
     if (rightCount > 0) onRight(right.split(find).join(replace))
   }
 
-  // 容错格式化:解析成功则用格式化结果替换输入,失败则原样保留
+  // 容错格式化:解析成功直接格式化;失败自动尝试 repairJson,修复成功用修复结果格式化
   const format = (s: string, apply: (v: string) => void) => {
     if (!s.trim()) return
     try {
       apply(JSON.stringify(tolerantParse(s), null, 2))
     } catch {
-      /* 解析失败:保持原样 */
+      const r = repairJson(s)
+      if (r.ok && r.result) {
+        try { apply(JSON.stringify(tolerantParse(r.result), null, 2)) } catch { /* 修复后仍失败,保持原样 */ }
+      }
     }
+  }
+
+  // 手动修复:替换输入为修复结果
+  const repairSide = (s: string, apply: (v: string) => void) => {
+    if (!s.trim()) return
+    const r = repairJson(s)
+    if (r.ok && r.result) apply(r.result)
+  }
+
+  // 反转义:外层多重剥离 + 结构内递归剥离(与 JSON 工作台一致)
+  const unescape = (s: string, apply: (v: string) => void) => {
+    if (!s.trim()) return
+    let v: unknown = s
+    for (let i = 0; i < 20; i++) {
+      if (typeof v !== 'string') break
+      try { v = JSON.parse(v) } catch { break }
+    }
+    v = deepUnescape(v)
+    if (typeof v === 'string') apply(v)
+    else apply(JSON.stringify(v, null, 2))
+  }
+
+  // ===== 同步滚动:两侧 CodeArea 联动(防回环) =====
+  const syncing = useRef(false)
+  useEffect(() => {
+    const unsubL = leftRef.current?.onScroll((top) => {
+      if (syncing.current) return
+      syncing.current = true
+      rightRef.current?.setScrollTop(top)
+      syncing.current = false
+    })
+    const unsubR = rightRef.current?.onScroll((top) => {
+      if (syncing.current) return
+      syncing.current = true
+      leftRef.current?.setScrollTop(top)
+      syncing.current = false
+    })
+    return () => { unsubL?.(); unsubR?.() }
+  }, [])
+
+  // 点击 diff 行跳转:removed 跳左,added 跳右,changed 两侧都跳
+  const jumpToDiff = (line: DiffLine) => {
+    if (line.leftLine) leftRef.current?.scrollToLine(line.leftLine)
+    if (line.rightLine) rightRef.current?.scrollToLine(line.rightLine)
   }
 
   return (
     <div className="relative flex w-full flex-col">
       <div className="flex flex-1">
         {/* JSON A — 左边框用蓝 */}
-        <div className="flex w-1/2 flex-col border-r border-line" style={{ borderLeft: '2px solid #2b5cd9' }}>
+        <div className="flex flex-1 flex-col" style={{ borderLeft: '2px solid #2b5cd9' }}>
           <div className="flex items-center gap-1.5 border-b border-line px-3 py-1">
             <span className="h-2 w-2 rounded-full" style={{ background: '#2b5cd9' }} />
             <span className="text-label text-ink-tertiary">JSON A</span>
@@ -130,6 +178,20 @@ export function JsonDiff({
             >
               格式化
             </button>
+            <button
+              onClick={() => unescape(left, onLeft)}
+              className="rounded-btn border border-line px-1.5 py-0.5 text-label text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary"
+            >
+              反转义
+            </button>
+            {result.lErr && (
+              <button
+                onClick={() => repairSide(left, onLeft)}
+                className="rounded-btn border border-danger/40 px-1.5 py-0.5 text-label text-danger hover:bg-danger/10"
+              >
+                修复
+              </button>
+            )}
           </div>
           <div className="flex-1">
             <CodeArea
@@ -142,8 +204,15 @@ export function JsonDiff({
             />
           </div>
         </div>
+
+        {/* 中间同步滑动条 */}
+        <div
+          className="flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-line hover:bg-accent/40"
+          title="拖动可同步滚动两侧"
+        />
+
         {/* JSON B — 左边框用绿 */}
-        <div className="flex w-1/2 flex-col" style={{ borderLeft: '2px solid #1a8a47' }}>
+        <div className="flex flex-1 flex-col" style={{ borderLeft: '2px solid #1a8a47' }}>
           <div className="flex items-center gap-1.5 border-b border-line px-3 py-1">
             <span className="h-2 w-2 rounded-full" style={{ background: '#1a8a47' }} />
             <span className="text-label text-ink-tertiary">JSON B</span>
@@ -153,6 +222,20 @@ export function JsonDiff({
             >
               格式化
             </button>
+            <button
+              onClick={() => unescape(right, onRight)}
+              className="rounded-btn border border-line px-1.5 py-0.5 text-label text-ink-tertiary hover:bg-bg-hover hover:text-ink-primary"
+            >
+              反转义
+            </button>
+            {result.rErr && (
+              <button
+                onClick={() => repairSide(right, onRight)}
+                className="rounded-btn border border-danger/40 px-1.5 py-0.5 text-label text-danger hover:bg-danger/10"
+              >
+                修复
+              </button>
+            )}
           </div>
           <div className="flex-1">
             <CodeArea
@@ -186,9 +269,29 @@ export function JsonDiff({
       {/* 差异结果:逐行高亮 */}
       <div className="h-48 overflow-auto border-t border-line bg-bg-subtle">
         {(result.lErr || result.rErr) ? (
-          <div className="p-2 text-caption text-danger">
-            {result.lErr && <div>A 解析错误: {result.lErr}</div>}
-            {result.rErr && <div>B 解析错误: {result.rErr}</div>}
+          <div className="flex flex-col gap-1 p-2 text-caption text-danger">
+            {result.lErr && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">A 解析错误: {result.lErr}</span>
+                <button
+                  onClick={() => repairSide(left, onLeft)}
+                  className="shrink-0 rounded-btn border border-danger/40 px-1.5 py-0.5 text-caption text-danger hover:bg-danger/10"
+                >
+                  修复 A
+                </button>
+              </div>
+            )}
+            {result.rErr && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">B 解析错误: {result.rErr}</span>
+                <button
+                  onClick={() => repairSide(right, onRight)}
+                  className="shrink-0 rounded-btn border border-danger/40 px-1.5 py-0.5 text-caption text-danger hover:bg-danger/10"
+                >
+                  修复 B
+                </button>
+              </div>
+            )}
           </div>
         ) : diffCount === 0 ? (
           <div className="p-3 text-caption text-ink-tertiary">
@@ -216,7 +319,7 @@ export function JsonDiff({
             {result.lines
               .filter((l) => l.status !== 'same')
               .map((l, i) => (
-                <DiffRow key={i} line={l} />
+                <DiffRow key={i} line={l} onClick={() => jumpToDiff(l)} />
               ))}
           </>
         )}
@@ -236,7 +339,7 @@ function countMatches(text: string, query: string): number {
   }
 }
 
-function DiffRow({ line }: { line: DiffLine }) {
+function DiffRow({ line, onClick }: { line: DiffLine; onClick: () => void }) {
   // 整行背景色(明快但不刺眼)
   const bg =
     line.status === 'added'
@@ -257,7 +360,9 @@ function DiffRow({ line }: { line: DiffLine }) {
 
   return (
     <div
-      className="flex items-baseline gap-2 px-3 py-0.5 font-mono text-code"
+      onClick={onClick}
+      title="点击跳转到对应位置"
+      className="flex cursor-pointer items-baseline gap-2 px-3 py-0.5 font-mono text-code hover:brightness-95"
       style={{ background: bg }}
     >
       <span style={{ color: markerColor }} className="w-3">

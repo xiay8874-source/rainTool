@@ -5,6 +5,10 @@ import { create } from 'zustand'
 export interface TabState {
   /** 标签页持有的工具输入内容(字符串,由各工具自行解释) */
   input: string
+  /** 对比模式左侧(独立于树形 input,仅 json-workbench 用,持久化) */
+  diffLeft?: string
+  /** 对比模式右侧 */
+  diffRight?: string
   /** 工具自定义配置(JSON 字符串) */
   config?: string
   /** 是否固定 */
@@ -61,6 +65,8 @@ interface AppState {
   duplicateTab: (id: string) => string
   setActiveTab: (id: string | null) => void
   setTabInput: (id: string, input: string) => void
+  setTabDiffLeft: (id: string, v: string) => void
+  setTabDiffRight: (id: string, v: string) => void
   setTabConfig: (id: string, config: string) => void
   togglePin: (id: string) => void
   moveTabToGroup: (id: string, groupId: string | null) => void
@@ -210,6 +216,16 @@ export const useAppStore = create<AppState>((set, get) => {
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, state: { ...t.state, input } } : t)),
     })),
 
+  setTabDiffLeft: (id, v) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.id === id ? { ...t, state: { ...t.state, diffLeft: v } } : t)),
+    })),
+
+  setTabDiffRight: (id, v) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.id === id ? { ...t, state: { ...t.state, diffRight: v } } : t)),
+    })),
+
   setTabConfig: (id, config) =>
     set((s) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, state: { ...t.state, config } } : t)),
@@ -290,7 +306,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
   persist: async () => {
     const { tabs, groups, activeTabId } = get()
-    const snapshot = { tabs, groups, activeTabId, version: 1 }
+    const snapshot = { tabs, groups, activeTabId, version: 2 }
     try {
       if (window.raintool?.storeSet) {
         await window.raintool.storeSet('workspace', snapshot)

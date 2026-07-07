@@ -28,6 +28,14 @@ export interface CodeAreaHandle {
   selectRange(start: number, end: number): void
   /** 替换 [start,end) 为 text,触发 onChange(进入撤销栈) */
   replaceRange(start: number, end: number, text: string): void
+  /** 滚动到指定行(1 起始),居中显示 */
+  scrollToLine(line: number): void
+  /** 获取当前 scrollTop(用于同步滚动) */
+  getScrollTop(): number
+  /** 设置 scrollTop(用于同步滚动),同步 pre 高亮层 */
+  setScrollTop(v: number): void
+  /** 订阅滚动事件,返回取消订阅函数 */
+  onScroll(cb: (scrollTop: number) => void): () => void
 }
 
 export const CodeArea = forwardRef<CodeAreaHandle, {
@@ -53,6 +61,8 @@ export const CodeArea = forwardRef<CodeAreaHandle, {
   const hIdx = useRef(0)
   // 标记:本次 onChange 是由 undo/redo 触发的,不要入栈
   const skipPush = useRef(false)
+  // 外部滚动订阅(用于 JsonDiff 两侧同步滚动)
+  const scrollCallbacks = useRef<Set<(top: number) => void>>(new Set())
 
   // 外部重置(如程序化 onInput 格式化/压缩):若值与栈顶不同且非 undo 引起,入栈
   useEffect(() => {
@@ -70,13 +80,15 @@ export const CodeArea = forwardRef<CodeAreaHandle, {
     }
   }, [value])
 
-  // 同步滚动:textarea 滚动时,pre 跟随
+  // 同步滚动:textarea 滚动时,pre 跟随,并通知外部订阅者(同步滚动)
   const syncScroll = () => {
     const ta = taRef.current
     const pre = preRef.current
     if (!ta || !pre) return
     pre.scrollTop = ta.scrollTop
     pre.scrollLeft = ta.scrollLeft
+    // 通知外部 onScroll 订阅者
+    scrollCallbacks.current.forEach((cb) => cb(ta.scrollTop))
   }
 
   useEffect(() => {
@@ -154,6 +166,31 @@ export const CodeArea = forwardRef<CodeAreaHandle, {
     replaceRange(start: number, end: number, text: string) {
       const next = value.slice(0, start) + text + value.slice(end)
       onChange(next)
+    },
+    scrollToLine(line: number) {
+      const ta = taRef.current
+      if (!ta || line < 1) return
+      const lineHeight = 19.2
+      const targetTop = (line - 1) * lineHeight
+      const viewH = ta.clientHeight
+      // 居中显示
+      if (targetTop < ta.scrollTop || targetTop > ta.scrollTop + viewH - lineHeight) {
+        ta.scrollTop = Math.max(0, targetTop - viewH / 2)
+        syncScroll()
+      }
+    },
+    getScrollTop() {
+      return taRef.current?.scrollTop ?? 0
+    },
+    setScrollTop(v: number) {
+      const ta = taRef.current
+      if (!ta) return
+      ta.scrollTop = v
+      syncScroll()
+    },
+    onScroll(cb: (scrollTop: number) => void) {
+      scrollCallbacks.current.add(cb)
+      return () => { scrollCallbacks.current.delete(cb) }
     },
   }), [value, onChange])
 

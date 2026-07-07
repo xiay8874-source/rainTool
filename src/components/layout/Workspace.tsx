@@ -22,6 +22,8 @@ export function Workspace() {
   const groups = useAppStore((s) => s.groups)
   const openTab = useAppStore((s) => s.openTab)
   const setTabInput = useAppStore((s) => s.setTabInput)
+  const setTabDiffLeft = useAppStore((s) => s.setTabDiffLeft)
+  const setTabDiffRight = useAppStore((s) => s.setTabDiffRight)
   const duplicateTab = useAppStore((s) => s.duplicateTab)
   const activeCategory = useUIStore((s) => s.activeCategory)
   const addFavTab = useFavoritesStore((s) => s.addTab)
@@ -87,6 +89,10 @@ export function Workspace() {
                   input={t.state.input}
                   onInput={(v) => setTabInput(t.id, v)}
                   config={t.state.config}
+                  diffLeft={t.state.diffLeft}
+                  diffRight={t.state.diffRight}
+                  onDiffLeft={(v) => setTabDiffLeft(t.id, v)}
+                  onDiffRight={(v) => setTabDiffRight(t.id, v)}
                 />
               </Suspense>
             </div>

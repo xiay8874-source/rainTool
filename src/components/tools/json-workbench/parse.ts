@@ -44,3 +44,66 @@ export function parseError(text: string): { message: string; position: number } 
     return { message: msg, position: posMatch ? Number(posMatch[1]) : -1 }
   }
 }
+
+/**
+ * 智能修复 JSON:尝试多种修复策略,返回可解析的结果。
+ * 策略:cleanup(单引号/注释/尾逗号/未引号 key) → 去控制字符 → 修 True/False/None → 补全括号。
+ * 成功返回 { ok: true, result },失败 { ok: false, error }。
+ */
+export function repairJson(text: string): { ok: boolean; result?: string; error?: string } {
+  try {
+    // 1. 先试原样解析(可能本来就合法)
+    try {
+      JSON.parse(text)
+      return { ok: true, result: text }
+    } catch {
+      /* 继续修复 */
+    }
+    // 2. cleanup 基础修复
+    let s = cleanup(text)
+    // 3. 去除控制字符(\x00-\x1F,保留 \t \n \r)
+    s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    // 4. 修 True/False/None(Python 风格 → JSON)
+    s = s.replace(/\b(True)\b/g, 'true').replace(/\b(False)\b/g, 'false').replace(/\b(None)\b/g, 'null')
+    // 5. 试解析
+    try {
+      JSON.parse(s)
+      return { ok: true, result: s }
+    } catch {
+      /* 继续补括号 */
+    }
+    // 6. 智能补全未闭合的 } ]
+    s = balanceBrackets(s)
+    try {
+      JSON.parse(s)
+      return { ok: true, result: s }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** 统计 { } [ ] 的未闭合数量,在末尾补全缺失的闭合符 */
+function balanceBrackets(s: string): string {
+  let braces = 0 // {}
+  let brackets = 0 // []
+  let inStr = false
+  let escape = false
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (escape) { escape = false; continue }
+    if (c === '\\') { escape = true; continue }
+    if (c === '"') { inStr = !inStr; continue }
+    if (inStr) continue
+    if (c === '{') braces++
+    else if (c === '}') braces--
+    else if (c === '[') brackets++
+    else if (c === ']') brackets--
+  }
+  let tail = ''
+  for (let i = 0; i < Math.max(0, brackets); i++) tail += ']'
+  for (let i = 0; i < Math.max(0, braces); i++) tail += '}'
+  return s + tail
+}

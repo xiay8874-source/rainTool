@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import type { ToolProps } from '../shared'
 import { ActionBtn, CopyBtn } from '../shared'
-import { tolerantParse, parseError } from './parse'
+import { tolerantParse, parseError, repairJson } from './parse'
 import { JsonTree } from './JsonTree'
 import { JsonDiff } from './JsonDiff'
 import { CodeArea, type CodeAreaHandle } from '../CodeArea'
@@ -10,10 +10,16 @@ import { escapeRegExp } from './highlight'
 
 type Mode = 'tree' | 'diff'
 
-export default function JsonWorkbench({ input, onInput }: ToolProps) {
+export default function JsonWorkbench({ input, onInput, diffLeft, diffRight, onDiffLeft, onDiffRight }: ToolProps) {
   const [mode, setMode] = useState<Mode>('tree')
   const [indent, setIndent] = useState(2)
-  const [diffInput, setDiffInput] = useState('')
+
+  // 对比模式首次进入且 diffLeft 为空时,从树形 input 拷贝一份作初始值(便利)
+  useEffect(() => {
+    if (mode === 'diff' && diffLeft === undefined && input.trim() && onDiffLeft) {
+      onDiffLeft(input)
+    }
+  }, [mode, diffLeft, input, onDiffLeft])
 
   const { parsed, error } = useMemo(() => {
     if (!input.trim()) return { parsed: null, error: null }
@@ -91,6 +97,32 @@ export default function JsonWorkbench({ input, onInput }: ToolProps) {
     v = deepUnescape(v)
     if (typeof v === 'string') onInput(v)
     else onInput(JSON.stringify(v, null, indent))
+  }
+
+  // 格式化:解析成功直接格式化;失败自动尝试 repairJson,修复成功则用修复结果格式化
+  const formatOrRepair = () => {
+    if (!input.trim()) return
+    try {
+      onInput(JSON.stringify(tolerantParse(input), null, indent))
+    } catch {
+      // 解析失败,尝试修复
+      const r = repairJson(input)
+      if (r.ok && r.result) {
+        try {
+          onInput(JSON.stringify(tolerantParse(r.result), null, indent))
+        } catch {
+          /* 修复后仍无法格式化,保持原样 */
+        }
+      }
+      // 修复失败:不替换输入,由错误提示区展示(用户可点「尝试修复」)
+    }
+  }
+
+  // 手动尝试修复:替换输入为修复结果
+  const tryRepair = () => {
+    if (!input.trim()) return
+    const r = repairJson(input)
+    if (r.ok && r.result) onInput(r.result)
   }
 
   // ===== 查找/替换(树形模式:作用于输入区 CodeArea,树形做高亮镜像) =====
@@ -180,7 +212,7 @@ export default function JsonWorkbench({ input, onInput }: ToolProps) {
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          {mode === 'tree' && <ActionBtn onClick={() => onInput(formatted)}>格式化</ActionBtn>}
+          {mode === 'tree' && <ActionBtn onClick={formatOrRepair}>格式化</ActionBtn>}
           {mode === 'tree' && <ActionBtn onClick={() => onInput(minified)}>压缩</ActionBtn>}
           {mode === 'tree' && (
             <>
@@ -206,8 +238,14 @@ export default function JsonWorkbench({ input, onInput }: ToolProps) {
 
       {/* 错误提示 */}
       {errInfo && (
-        <div className="border-b border-line bg-bg-subtle px-4 py-1.5 text-caption text-danger">
-          {errInfo.message}
+        <div className="flex items-center justify-between border-b border-line bg-bg-subtle px-4 py-1.5 text-caption text-danger">
+          <span className="truncate">{errInfo.message}</span>
+          <button
+            onClick={tryRepair}
+            className="ml-2 shrink-0 rounded-btn border border-danger/40 px-1.5 py-0.5 text-caption text-danger hover:bg-danger/10"
+          >
+            尝试修复
+          </button>
         </div>
       )}
 
@@ -256,7 +294,12 @@ export default function JsonWorkbench({ input, onInput }: ToolProps) {
         )}
 
         {mode === 'diff' && (
-          <JsonDiff left={input} right={diffInput} onLeft={onInput} onRight={setDiffInput} />
+          <JsonDiff
+            left={diffLeft ?? ''}
+            right={diffRight ?? ''}
+            onLeft={onDiffLeft ?? (() => {})}
+            onRight={onDiffRight ?? (() => {})}
+          />
         )}
       </div>
     </div>
@@ -269,7 +312,7 @@ export default function JsonWorkbench({ input, onInput }: ToolProps) {
  * 例如 {"payload":"{\"inner\":\"v\"}"} → {"payload":{"inner":"v"}}
  * 数组与对象均递归处理;数字/布尔/null 不动。
  */
-function deepUnescape(v: unknown): unknown {
+export function deepUnescape(v: unknown): unknown {
   if (typeof v === 'string') {
     // 尝试解析为 JSON;成功则对结果继续递归剥离
     try {
