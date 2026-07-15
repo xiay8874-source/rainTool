@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -6,11 +6,17 @@ import { tmpdir } from 'node:os'
 import https from 'node:https'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
+import {
+  killAiDrawioServerNow,
+  startAiDrawioServer,
+  stopAiDrawioServer,
+} from './ai-drawio-service.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !app.isPackaged
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const APP_INDEX_PATH = path.resolve(__dirname, '..', 'dist', 'index.html')
 
 // ============ 持久化:~/raintool/ 明文 JSON 文件 ============
 // 用户主目录下,用户可见可备份。替代 electron-store(其异步 IPC 在退出时不可靠)。
@@ -35,6 +41,18 @@ function deleteData(key: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+})
 
 // 持久化 IPC:工作区 / 收藏夹 / 配置(同步 fs 读写,渲染层无感)
 ipcMain.handle('store:get', (_e, key: string) => readData(key))
@@ -43,6 +61,17 @@ ipcMain.handle('store:set', (_e, key: string, value: unknown) => {
 })
 ipcMain.handle('store:delete', (_e, key: string) => {
   deleteData(key)
+})
+
+ipcMain.handle('ai-drawio:start', (event) => {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== event.sender.mainFrame
+  ) {
+    throw new Error('拒绝来自非 RainTool 主渲染页的 AI Draw.io 请求')
+  }
+  return startAiDrawioServer()
 })
 
 // ============ 自动更新:手动 GitHub Releases 检查 ============
@@ -226,8 +255,8 @@ ipcMain.handle('update:install', async (_e, dmgPath: string) => {
   // 5. 清理 dmg 临时文件
   try { unlinkSync(dmgPath) } catch { /* ignore */ }
 
-  // 6. relaunch 前先 flush 工作区(app.exit 不触发 before-quit,需显式调)
-  await flushBeforeExit()
+  // 6. app.exit 不触发 before-quit：必须显式 flush 并停止 AI 服务
+  await Promise.all([flushBeforeExit(), stopAiDrawioServer()])
 
   // 7. relaunch 退出:旧进程退出后由系统拉起新 app
   app.relaunch()
@@ -248,22 +277,55 @@ function flushBeforeExit(): Promise<void> {
   })
 }
 
-let isFlushing = false
-let flushDone = false // flush 已完成,后续 before-quit 直接放行(避免 app.quit() 死循环)
+let shutdownStarted = false
+let shutdownDone = false // flush/AI 服务停止后放行，避免 app.quit() 死循环
 app.on('before-quit', (e) => {
-  if (flushDone || !mainWindow || mainWindow.isDestroyed()) return
-  if (isFlushing) return
+  if (shutdownDone) return
   e.preventDefault()
-  isFlushing = true
-  const timer = setTimeout(() => { flushDone = true; isFlushing = false; app.quit() }, 1500)
-  ipcMain.once('app:flushed', () => {
-    clearTimeout(timer)
-    flushDone = true
-    isFlushing = false
+  if (shutdownStarted) return
+  shutdownStarted = true
+  Promise.all([flushBeforeExit(), stopAiDrawioServer()]).finally(() => {
+    shutdownDone = true
     app.quit()
   })
-  mainWindow.webContents.send('app:flush')
 })
+
+// 同步兜底；正常退出和自动更新路径都在此之前显式 await stopAiDrawioServer。
+app.on('will-quit', () => killAiDrawioServerNow())
+
+function isRainToolMainFrameUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'file:') {
+      return path.resolve(fileURLToPath(parsed)) === APP_INDEX_PATH
+    }
+    if (!VITE_DEV_SERVER_URL) return false
+    return parsed.origin === new URL(VITE_DEV_SERVER_URL).origin
+  } catch {
+    return false
+  }
+}
+
+function isAllowedEmbeddedFrameUrl(url: string): boolean {
+  if (url === 'about:blank' || url.startsWith('blob:') || url.startsWith('data:')) return true
+  if (isRainToolMainFrameUrl(url)) return true
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'http:' &&
+      parsed.hostname === '127.0.0.1' &&
+      ['6002', '13370'].includes(parsed.port)
+    )
+  } catch {
+    return false
+  }
+}
+
+function openExternalSafely(url: string): void {
+  if (url.startsWith('https://') || url.startsWith('http://')) {
+    void shell.openExternal(url)
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -290,6 +352,24 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  // RainTool 顶层不可被嵌入页面导航；AI/Draw.io 外链统一交给系统浏览器。
+  mainWindow.webContents.on('will-navigate', (event) => {
+    if (isRainToolMainFrameUrl(event.url)) return
+    event.preventDefault()
+    openExternalSafely(event.url)
+  })
+  mainWindow.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame || isAllowedEmbeddedFrameUrl(event.url)) return
+    event.preventDefault()
+    openExternalSafely(event.url)
+  })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowedEmbeddedFrameUrl(url)) openExternalSafely(url)
+    return { action: 'deny' }
+  })
+  // draw.io 编辑文本时会注册 beforeunload；退出由 RainTool 的 flush 流程统一控制。
+  mainWindow.webContents.on('will-prevent-unload', (event) => event.preventDefault())
+
   // 右键菜单:仅在文本区(textarea/input/contenteditable)或有选中文字时弹出,
   // 避免与其他右键功能冲突。可编辑区弹完整菜单;只读区只弹复制。
   // 快捷键 ⌘C/⌘X/⌘V/⌘A 由上方 Edit 菜单的 role accelerator 驱动(macOS 必需)。
@@ -314,6 +394,7 @@ function createWindow() {
 // 改用 productName + 自定义应用菜单设置 macOS 菜单栏显示名。
 
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
   // macOS 应用菜单首项显示 "RainTool"(替代默认的 Electron/raintool)
   const isMac = process.platform === 'darwin'
   const appSubmenu = isMac

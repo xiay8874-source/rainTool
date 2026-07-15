@@ -146,6 +146,14 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     openTab: (toolId, title, groupId = null) => {
+      if (toolId === 'ai-drawio') {
+        const existing = get().tabs.find((tab) => tab.toolId === 'ai-drawio')
+        if (existing) {
+          set({ activeTabId: existing.id })
+          pushHistory(existing.id)
+          return existing.id
+        }
+      }
       const id = uid()
       const tab: Tab = {
         id,
@@ -185,6 +193,11 @@ export const useAppStore = create<AppState>((set, get) => {
     duplicateTab: (id) => {
       const src = get().tabs.find((t) => t.id === id)
       if (!src) return id
+      if (src.toolId === 'ai-drawio') {
+        set({ activeTabId: src.id })
+        pushHistory(src.id)
+        return src.id
+      }
       const newId = uid()
       const copy: Tab = {
         ...src,
@@ -333,12 +346,22 @@ export const useAppStore = create<AppState>((set, get) => {
         data = s ? JSON.parse(s) : null
       }
       if (data && (data.tabs?.length || data.groups?.length)) {
+        // AI Draw.io 是重量级单例；兼容清理旧快照中可能存在的重复标签。
+        let aiDrawioTabId: string | null = null
+        const tabs = (data.tabs ?? []).filter((tab) => {
+          if (tab.toolId !== 'ai-drawio') return true
+          if (aiDrawioTabId) return false
+          aiDrawioTabId = tab.id
+          return true
+        })
         const activeTabId =
-          data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId)
+          data.activeTabId && tabs.some((t) => t.id === data!.activeTabId)
             ? data.activeTabId
-            : (data.tabs?.[0]?.id ?? null)
+            : (data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId && t.toolId === 'ai-drawio')
+                ? aiDrawioTabId
+                : (tabs[0]?.id ?? null))
         set({
-          tabs: data.tabs ?? [],
+          tabs,
           groups: data.groups ?? [],
           activeTabId,
           // 恢复后历史从当前活动标签开始

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AiDrawioStartResult } from './ai-drawio-types.js'
 
 // 暴露给渲染进程的持久化 API(收藏夹等)+ 自动更新 API + 鼠标导航
 const api = {
@@ -23,6 +24,9 @@ const api = {
 
   // 应用版本号(来自 app.getVersion(),打包后读 package.json)
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+
+  // AI Draw.io:仅暴露固定服务的启动动作，不接收路径、端口或命令参数
+  startAiDrawio: (): Promise<AiDrawioStartResult> => ipcRenderer.invoke('ai-drawio:start'),
 
   // 退出前 flush:主进程 before-quit / installUpdate 退出前发 app:flush,
   // 渲染进程执行完异步保存后回 app:flushed,主进程收到后才放行退出

@@ -81,7 +81,7 @@ export function Workspace() {
           return (
             <div
               key={t.id}
-              className="absolute inset-0 overflow-auto"
+              className={`absolute inset-0 ${t.toolId === 'ai-drawio' ? 'overflow-hidden' : 'overflow-auto'}`}
               style={{ display: t.id === activeTabId ? 'block' : 'none' }}
             >
               <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>

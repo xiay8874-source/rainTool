@@ -8,18 +8,23 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:electron": "npm run build:electron && electron .",
+    "dev": "node scripts/dev.mjs",
+    "dev:vite": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "npm run dev",
     "build": "tsc -b && vite build",
     "build:electron": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
+    "build:ai": "node scripts/build-next-standalone.mjs",
+    "verify:ai": "node scripts/verify-next-standalone.mjs",
+    "verify:package:ai": "node scripts/verify-packaged-ai.mjs",
     "preview": "vite preview",
-    "start": "npm run build:electron && electron .",
-    "start:prod": "npm run build && npm run build:electron && electron .",
-    "dist": "npm run build && npm run build:electron && electron-builder --mac"
+    "start": "npm run start:prod",
+    "start:prod": "npm run build:ai && npm run build && npm run build:electron && electron .",
+    "dist": "npm run build:ai && npm run build && npm run build:electron && electron-builder --mac && npm run verify:package:ai"
   },
   "build": {
     "appId": "com.xiay8874.raintool",
     "productName": "RainTool",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release",
       "buildResources": "build-resources"
@@ -27,6 +32,32 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/next-standalone",
+        "to": "next-standalone",
+        "filter": [
+          "**/*",
+          "!**/node_modules",
+          "!**/node_modules/**"
+        ]
+      },
+      {
+        "from": "build/next-standalone/node_modules",
+        "to": "next-standalone/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "LICENSES",
+        "to": "licenses"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

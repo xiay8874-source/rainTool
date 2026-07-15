@@ -28,6 +28,16 @@ export interface UpdateProgress {
   total: number
 }
 
+export type AiDrawioStartErrorCode =
+  | 'PORT_IN_USE'
+  | 'MISSING_RESOURCE'
+  | 'START_TIMEOUT'
+  | 'START_FAILED'
+
+export type AiDrawioStartResult =
+  | { status: 'ready'; code: 'READY'; url: string }
+  | { status: 'error'; code: AiDrawioStartErrorCode; message: string; details?: string }
+
 export interface RaintoolAPI {
   // 持久化存储(收藏夹 / 配置)
   storeGet: (key: string) => Promise<unknown>
@@ -36,6 +46,9 @@ export interface RaintoolAPI {
 
   // 应用版本号(来自 app.getVersion(),打包后读 package.json)
   getVersion: () => Promise<string>
+
+  /** 启动固定的本地 AI Draw.io 服务；不接收端口、路径或命令参数 */
+  startAiDrawio: () => Promise<AiDrawioStartResult>
 
   // 退出前 flush:主进程 before-quit / installUpdate 退出前发 app:flush,
   // 渲染进程 await cb 完成异步保存后回 app:flushed,主进程收到才放行退出

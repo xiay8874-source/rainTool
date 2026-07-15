@@ -10,5 +10,5 @@
     "outDir": "../dist-electron",
     "rootDir": "."
   },
-  "include": ["./preload.ts"]
+  "include": ["./preload.ts", "./ai-drawio-types.d.ts"]
 }

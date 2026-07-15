@@ -12,6 +12,7 @@ export type ToolCategoryId =
   | 'codegen'
   | 'text'
   | 'network'
+  | 'ai'
 
 export interface ToolCategory {
   id: ToolCategoryId
@@ -34,9 +35,16 @@ export const CATEGORIES: ToolCategory[] = [
   { id: 'codegen', name: '代码生成', icon: 'codegen' },
   { id: 'text', name: '文本处理', icon: 'text' },
   { id: 'network', name: '网络工具', icon: 'network' },
+  { id: 'ai', name: 'AI 工具', icon: 'ai' },
 ]
 
 export const TOOLS: ToolDef[] = [
+  {
+    id: 'ai-drawio',
+    categoryId: 'ai',
+    name: 'AI 画图',
+    loader: () => import('@/components/tools/ai-drawio'),
+  },
   // JSON
   {
     id: 'json-workbench',
