@@ -10,5 +10,12 @@
     "outDir": "../dist-electron",
     "rootDir": "."
   },
-  "include": ["./main.ts"]
+  "include": [
+    "./main.ts",
+    "./ai-drawio-service.ts",
+    "./ai-drawio-types.d.ts",
+    "./diagram-types.ts",
+    "./diagram-repository.ts",
+    "./diagram-bridge-server.ts"
+  ]
 }

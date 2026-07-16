@@ -41,7 +41,7 @@ function DragHeader() {
   const rect = useUIStore((s) => s.favoritesRect)
   const setRect = useUIStore((s) => s.setFavoritesRect)
   const dragging = useRef<{ ox: number; oy: number } | null>(null)
-  const [count] = useState(useFavoritesStore.getState().items.length)
+  const count = useFavoritesStore((s) => s.items.length)
 
   const onDown = (e: MouseEvent) => {
     dragging.current = { ox: e.clientX - rect.x, oy: e.clientY - rect.y }
@@ -112,6 +112,7 @@ function FavoritesList() {
   const [newFolderName, setNewFolderName] = useState('')
 
   const openTab = useAppStore((s) => s.openTab)
+  const openDiagramTab = useAppStore((s) => s.openDiagramTab)
   const setTabInput = useAppStore((s) => s.setTabInput)
   const createGroup = useAppStore((s) => s.createGroup)
   const moveTabToGroup = useAppStore((s) => s.moveTabToGroup)
@@ -134,7 +135,9 @@ function FavoritesList() {
   const handleRestoreTab = (id: string) => {
     const t = restoreTab(id)
     if (!t) return
-    const tabId = openTab(t.toolId, t.title)
+    const tabId = t.toolId === 'ai-drawio' && t.diagramId
+      ? openDiagramTab(t.diagramId, t.title)
+      : openTab(t.toolId, t.title)
     if (t.input) setTabInput(tabId, t.input)
   }
 
@@ -144,7 +147,9 @@ function FavoritesList() {
     if (!g) return
     const gid = createGroup(g.name)
     g.tabs.forEach((t) => {
-      const tabId = openTab(t.toolId, t.title)
+      const tabId = t.toolId === 'ai-drawio' && t.diagramId
+        ? openDiagramTab(t.diagramId, t.title)
+        : openTab(t.toolId, t.title)
       if (t.input) setTabInput(tabId, t.input)
       moveTabToGroup(tabId, gid)
     })

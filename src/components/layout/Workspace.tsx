@@ -24,12 +24,24 @@ export function Workspace() {
   const setTabInput = useAppStore((s) => s.setTabInput)
   const setTabDiffLeft = useAppStore((s) => s.setTabDiffLeft)
   const setTabDiffRight = useAppStore((s) => s.setTabDiffRight)
+  const setTabDiagramId = useAppStore((s) => s.setTabDiagramId)
   const duplicateTab = useAppStore((s) => s.duplicateTab)
   const activeCategory = useUIStore((s) => s.activeCategory)
   const addFavTab = useFavoritesStore((s) => s.addTab)
   const addFavGroup = useFavoritesStore((s) => s.addGroup)
+  const favoriteItems = useFavoritesStore((s) => s.items)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
+  const activeTabIsFavorite = Boolean(activeTab && favoriteItems.some((item) => {
+    if (item.kind !== 'tab' || !item.tab) return false
+    if (activeTab.state.diagramId) return item.tab.diagramId === activeTab.state.diagramId
+    return item.tab.toolId === activeTab.toolId && item.tab.title === activeTab.title && item.tab.input === activeTab.state.input
+  }))
+
+  useEffect(() => {
+    const diagramId = activeTab?.toolId === 'ai-drawio' ? activeTab.state.diagramId ?? null : null
+    void window.raintool.setActiveDiagram(diagramId)
+  }, [activeTab?.toolId, activeTab?.state.diagramId])
 
   // 收藏当前标签页
   const handleFavTab = () => {
@@ -62,15 +74,17 @@ export function Workspace() {
             {groups.find((g) => g.id === activeTab.groupId)?.name ?? ''}
           </span>
         )}
-        <div className="ml-auto flex gap-1.5 no-drag">
-          <ToolBtn onClick={() => duplicateTab(activeTab.id)}>
-            复制此页
-          </ToolBtn>
-          <ToolBtn onClick={handleFavTab}>★ 收藏此页</ToolBtn>
-          <ToolBtn onClick={handleFavGroup} disabled={!activeTab.groupId}>
-            ★ 收藏当前分组
-          </ToolBtn>
-        </div>
+        {activeTab.toolId !== 'diagram-manager' && (
+          <div className="ml-auto flex gap-1.5 no-drag">
+            <ToolBtn onClick={() => void duplicateTab(activeTab.id)}>
+              复制此页
+            </ToolBtn>
+            <ToolBtn onClick={handleFavTab}>{activeTabIsFavorite ? '★ 已收藏' : '★ 收藏此页'}</ToolBtn>
+            <ToolBtn onClick={handleFavGroup} disabled={!activeTab.groupId}>
+              ★ 收藏当前分组
+            </ToolBtn>
+          </div>
+        )}
       </div>
 
       {/* 工具内容:keep-alive —— 所有已打开标签都挂载,用显隐切换,保留各工具内部状态(模式/光标/滚动等) */}
@@ -81,11 +95,12 @@ export function Workspace() {
           return (
             <div
               key={t.id}
-              className="absolute inset-0 overflow-auto"
+              className={`absolute inset-0 ${t.toolId === 'ai-drawio' ? 'overflow-hidden' : 'overflow-auto'}`}
               style={{ display: t.id === activeTabId ? 'block' : 'none' }}
             >
               <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>
                 <Comp
+                  tabId={t.id}
                   input={t.state.input}
                   onInput={(v) => setTabInput(t.id, v)}
                   config={t.state.config}
@@ -93,6 +108,8 @@ export function Workspace() {
                   diffRight={t.state.diffRight}
                   onDiffLeft={(v) => setTabDiffLeft(t.id, v)}
                   onDiffRight={(v) => setTabDiffRight(t.id, v)}
+                  diagramId={t.state.diagramId}
+                  onDiagramId={(diagramId, title) => setTabDiagramId(t.id, diagramId, title)}
                 />
               </Suspense>
             </div>

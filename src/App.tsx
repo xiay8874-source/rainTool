@@ -7,6 +7,7 @@ import { SettingsFloat } from './components/settings/SettingsFloat'
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore } from '@/store/favorites'
 import { useAppStore } from '@/store/tabs'
+import { useDiagramStore } from '@/store/diagrams'
 
 export default function App() {
   const toggleFavorites = useUIStore((s) => s.toggleFavorites)
@@ -14,6 +15,7 @@ export default function App() {
   const hydrateWorkspace = useAppStore((s) => s.hydrate)
   const setHasUpdate = useUIStore((s) => s.setHasUpdate)
   const setUpdateInfo = useUIStore((s) => s.setUpdateInfo)
+  const bindDiagramEvents = useDiagramStore((s) => s.bindEvents)
 
   // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
   useEffect(() => {
@@ -45,12 +47,6 @@ export default function App() {
     })()
   }, [setHasUpdate, setUpdateInfo])
 
-  // 启动时恢复:工作区(标签+分组+内容)+ 收藏夹
-  useEffect(() => {
-    hydrateWorkspace()
-    hydrateFavorites()
-  }, [hydrateWorkspace, hydrateFavorites])
-
   // 退出前 flush 工作区 + 收藏区(主进程 before-quit / installUpdate 触发 app:flush)
   // 替代不可靠的 beforeunload:主进程发 app:flush → 这里 await 两个 flush → 回 app:flushed
   useEffect(() => {
@@ -61,6 +57,23 @@ export default function App() {
       ])
     })
   }, [])
+
+  // MCP/外部编辑更新图纸库；open 请求在 RainTool 中聚焦对应图纸标签。
+  useEffect(() => {
+    const unbindStore = bindDiagramEvents()
+    const unbindOpen = window.raintool.onDiagramOpenRequested((request) => {
+      void (async () => {
+        const document = await window.raintool.getDiagram(request.id)
+        if (!document) return
+        useAppStore.getState().openDiagramTab(document.id, document.title)
+      })()
+    })
+    window.raintool.setDiagramRendererReady()
+    return () => {
+      unbindStore()
+      unbindOpen()
+    }
+  }, [bindDiagramEvents])
 
   // ⌘B 收藏夹;⌘F 查找;⌘[/⌘] 或 Alt+←/→ 标签前进/后退
   useEffect(() => {

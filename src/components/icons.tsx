@@ -71,6 +71,14 @@ export function CategoryIcon({ id, size = 18, className }: IconProps & { id: Too
           <path d="M5 12a7 7 0 0 1 14 0M2 12a10 10 0 0 1 20 0" />
         </svg>
       )
+    case 'ai':
+      return (
+        <svg {...base(size)} className={className}>
+          <path d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 16.5z" />
+          <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M19 9h3M2 15h3M19 15h3" />
+          <path d="M9 12h.01M15 12h.01M9.5 15h5" />
+        </svg>
+      )
   }
 }
 

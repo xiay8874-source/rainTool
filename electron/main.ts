@@ -1,16 +1,40 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import https from 'node:https'
 import http from 'node:http'
 import { spawn } from 'node:child_process'
+import {
+  killAiDrawioServerNow,
+  startAiDrawioServer,
+  stopAiDrawioServer,
+} from './ai-drawio-service.js'
+import { DiagramBridgeServer } from './diagram-bridge-server.js'
+import {
+  DiagramConflictError,
+  DiagramRepository,
+} from './diagram-repository.js'
+import type {
+  DiagramChangedEvent,
+  DiagramCreateInput,
+  DiagramDeletedEvent,
+  DiagramDuplicateInput,
+  DiagramExportRequest,
+  DiagramExportResult,
+  DiagramListQuery,
+  DiagramOpenRequest,
+  DiagramUpdateInput,
+  LegacyDiagramInput,
+} from './diagram-types.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isDev = !app.isPackaged
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+const APP_INDEX_PATH = path.resolve(__dirname, '..', 'dist', 'index.html')
 
 // ============ 持久化:~/raintool/ 明文 JSON 文件 ============
 // 用户主目录下,用户可见可备份。替代 electron-store(其异步 IPC 在退出时不可靠)。
@@ -35,6 +59,104 @@ function deleteData(key: string): void {
 }
 
 let mainWindow: BrowserWindow | null = null
+const diagramRepository = new DiagramRepository(DATA_DIR)
+let activeDiagramId: string | null = null
+let queuedDiagramOpen: DiagramOpenRequest | null = null
+let diagramRendererReady = false
+const readyDiagramEditors = new Set<string>()
+const pendingDiagramExports = new Map<string, {
+  request: DiagramExportRequest
+  resolve: (data: string) => void
+  reject: (error: Error) => void
+  timer: ReturnType<typeof setTimeout>
+  sent: boolean
+}>()
+
+function assertTrustedRenderer(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent): void {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== event.sender.mainFrame
+  ) {
+    throw new Error('拒绝来自非 RainTool 主渲染页的请求')
+  }
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function emitDiagramChanged(
+  document: ReturnType<DiagramRepository['require']>,
+  reason: DiagramChangedEvent['reason'],
+): void {
+  const event: DiagramChangedEvent = { document, reason }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagram:changed', event)
+}
+
+function emitDiagramDeleted(id: string): void {
+  const event: DiagramDeletedEvent = { id }
+  if (activeDiagramId === id) activeDiagramId = null
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('diagram:deleted', event)
+}
+
+function openDiagramInRenderer(id: string): void {
+  diagramRepository.require(id)
+  activeDiagramId = id
+  const request: DiagramOpenRequest = { id, focus: true }
+  queuedDiagramOpen = request
+  showMainWindow()
+  if (diagramRendererReady && mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.send('diagram:open-requested', request)
+    queuedDiagramOpen = null
+  }
+}
+
+function sendPendingExportsFor(id: string): void {
+  if (!readyDiagramEditors.has(id) || !mainWindow || mainWindow.isDestroyed()) return
+  for (const pending of pendingDiagramExports.values()) {
+    if (pending.request.id !== id || pending.sent) continue
+    pending.sent = true
+    mainWindow.webContents.send('diagram:export-requested', pending.request)
+  }
+}
+
+function requestDiagramExport(id: string, format: 'png' | 'svg'): Promise<string> {
+  diagramRepository.require(id)
+  return new Promise((resolve, reject) => {
+    const requestId = randomUUID()
+    const request: DiagramExportRequest = { requestId, id, format }
+    const timer = setTimeout(() => {
+      pendingDiagramExports.delete(requestId)
+      reject(new Error(`图纸 ${format.toUpperCase()} 导出超时`))
+    }, 20_000)
+    pendingDiagramExports.set(requestId, { request, resolve, reject, timer, sent: false })
+    openDiagramInRenderer(id)
+    sendPendingExportsFor(id)
+  })
+}
+
+const diagramBridge = new DiagramBridgeServer({
+  dataDir: DATA_DIR,
+  repository: diagramRepository,
+  getActiveDiagramId: () => activeDiagramId,
+  openDiagram: openDiagramInRenderer,
+  exportDiagram: requestDiagramExport,
+  onChanged: emitDiagramChanged,
+  onDeleted: emitDiagramDeleted,
+})
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  showMainWindow()
+})
 
 // 持久化 IPC:工作区 / 收藏夹 / 配置(同步 fs 读写,渲染层无感)
 ipcMain.handle('store:get', (_e, key: string) => readData(key))
@@ -43,6 +165,99 @@ ipcMain.handle('store:set', (_e, key: string, value: unknown) => {
 })
 ipcMain.handle('store:delete', (_e, key: string) => {
   deleteData(key)
+})
+
+// ============ 图纸库 IPC：所有图纸以 diagramId 持久化到 ~/raintool/diagrams ============
+ipcMain.handle('diagram:list', (event, query: DiagramListQuery) => {
+  assertTrustedRenderer(event)
+  return diagramRepository.list(query)
+})
+ipcMain.handle('diagram:get', (event, id: string) => {
+  assertTrustedRenderer(event)
+  return diagramRepository.get(id)
+})
+ipcMain.handle('diagram:create', (event, input: DiagramCreateInput) => {
+  assertTrustedRenderer(event)
+  const document = diagramRepository.create(input)
+  emitDiagramChanged(document, 'created')
+  return document
+})
+ipcMain.handle('diagram:update', (event, input: DiagramUpdateInput) => {
+  assertTrustedRenderer(event)
+  try {
+    const document = diagramRepository.update(input)
+    emitDiagramChanged(document, 'updated')
+    return { status: 'ok' as const, document }
+  } catch (error) {
+    if (error instanceof DiagramConflictError) {
+      return { status: 'conflict' as const, document: error.current }
+    }
+    throw error
+  }
+})
+ipcMain.handle('diagram:duplicate', (event, input: DiagramDuplicateInput) => {
+  assertTrustedRenderer(event)
+  const document = diagramRepository.duplicate(input)
+  emitDiagramChanged(document, 'duplicated')
+  return document
+})
+ipcMain.handle('diagram:delete', (event, id: string) => {
+  assertTrustedRenderer(event)
+  const deleted = diagramRepository.delete(id)
+  if (deleted) emitDiagramDeleted(id)
+  return deleted
+})
+ipcMain.handle('diagram:list-revisions', (event, id: string) => {
+  assertTrustedRenderer(event)
+  return diagramRepository.listRevisions(id)
+})
+ipcMain.handle('diagram:restore-revision', (event, id: string, revision: number, expectedRevision?: number) => {
+  assertTrustedRenderer(event)
+  const document = diagramRepository.restoreRevision(id, revision, expectedRevision)
+  emitDiagramChanged(document, 'restored')
+  return document
+})
+ipcMain.handle('diagram:migrate-legacy', (event, items: LegacyDiagramInput[]) => {
+  assertTrustedRenderer(event)
+  const result = diagramRepository.migrateLegacy(items)
+  for (const document of result.documents) emitDiagramChanged(document, 'migrated')
+  return result
+})
+ipcMain.handle('diagram:set-active', (event, id: string | null) => {
+  assertTrustedRenderer(event)
+  if (id) diagramRepository.require(id)
+  activeDiagramId = id
+})
+ipcMain.on('diagram:renderer-ready', (event) => {
+  assertTrustedRenderer(event)
+  diagramRendererReady = true
+  if (queuedDiagramOpen && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('diagram:open-requested', queuedDiagramOpen)
+    queuedDiagramOpen = null
+  }
+})
+ipcMain.on('diagram:editor-ready', (event, id: string, ready: boolean) => {
+  assertTrustedRenderer(event)
+  if (ready) {
+    readyDiagramEditors.add(id)
+    sendPendingExportsFor(id)
+  } else {
+    readyDiagramEditors.delete(id)
+  }
+})
+ipcMain.on('diagram:export-complete', (event, result: DiagramExportResult) => {
+  assertTrustedRenderer(event)
+  const pending = pendingDiagramExports.get(result.requestId)
+  if (!pending) return
+  pendingDiagramExports.delete(result.requestId)
+  clearTimeout(pending.timer)
+  if (result.error || !result.data) pending.reject(new Error(result.error || '图纸导出没有返回数据'))
+  else pending.resolve(result.data)
+})
+
+ipcMain.handle('ai-drawio:start', (event) => {
+  assertTrustedRenderer(event)
+  return startAiDrawioServer()
 })
 
 // ============ 自动更新:手动 GitHub Releases 检查 ============
@@ -226,8 +441,8 @@ ipcMain.handle('update:install', async (_e, dmgPath: string) => {
   // 5. 清理 dmg 临时文件
   try { unlinkSync(dmgPath) } catch { /* ignore */ }
 
-  // 6. relaunch 前先 flush 工作区(app.exit 不触发 before-quit,需显式调)
-  await flushBeforeExit()
+  // 6. app.exit 不触发 before-quit：必须显式 flush 并停止 AI 服务
+  await Promise.all([flushBeforeExit(), stopAiDrawioServer(), diagramBridge.stop()])
 
   // 7. relaunch 退出:旧进程退出后由系统拉起新 app
   app.relaunch()
@@ -248,22 +463,55 @@ function flushBeforeExit(): Promise<void> {
   })
 }
 
-let isFlushing = false
-let flushDone = false // flush 已完成,后续 before-quit 直接放行(避免 app.quit() 死循环)
+let shutdownStarted = false
+let shutdownDone = false // flush/AI 服务停止后放行，避免 app.quit() 死循环
 app.on('before-quit', (e) => {
-  if (flushDone || !mainWindow || mainWindow.isDestroyed()) return
-  if (isFlushing) return
+  if (shutdownDone) return
   e.preventDefault()
-  isFlushing = true
-  const timer = setTimeout(() => { flushDone = true; isFlushing = false; app.quit() }, 1500)
-  ipcMain.once('app:flushed', () => {
-    clearTimeout(timer)
-    flushDone = true
-    isFlushing = false
+  if (shutdownStarted) return
+  shutdownStarted = true
+  Promise.all([flushBeforeExit(), stopAiDrawioServer(), diagramBridge.stop()]).finally(() => {
+    shutdownDone = true
     app.quit()
   })
-  mainWindow.webContents.send('app:flush')
 })
+
+// 同步兜底；正常退出和自动更新路径都在此之前显式 await stopAiDrawioServer。
+app.on('will-quit', () => killAiDrawioServerNow())
+
+function isRainToolMainFrameUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'file:') {
+      return path.resolve(fileURLToPath(parsed)) === APP_INDEX_PATH
+    }
+    if (!VITE_DEV_SERVER_URL) return false
+    return parsed.origin === new URL(VITE_DEV_SERVER_URL).origin
+  } catch {
+    return false
+  }
+}
+
+function isAllowedEmbeddedFrameUrl(url: string): boolean {
+  if (url === 'about:blank' || url.startsWith('blob:') || url.startsWith('data:')) return true
+  if (isRainToolMainFrameUrl(url)) return true
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'http:' &&
+      parsed.hostname === '127.0.0.1' &&
+      ['6002', '13370'].includes(parsed.port)
+    )
+  } catch {
+    return false
+  }
+}
+
+function openExternalSafely(url: string): void {
+  if (url.startsWith('https://') || url.startsWith('http://')) {
+    void shell.openExternal(url)
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -278,7 +526,7 @@ function createWindow() {
     // 三个圆点直径 12px,y=14 → 圆心 y=20,底部 y=26,留 2px 余量到 pt-7(28px) 内容区
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -289,6 +537,30 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  // 子 iframe（Next/Draw.io）也会触发 did-start-loading，不能因此把顶层
+  // renderer 标记为未就绪，否则 MCP open/export 会在第一次画布加载后永久排队。
+  mainWindow.webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) diagramRendererReady = false
+  })
+
+  // RainTool 顶层不可被嵌入页面导航；AI/Draw.io 外链统一交给系统浏览器。
+  mainWindow.webContents.on('will-navigate', (event) => {
+    if (isRainToolMainFrameUrl(event.url)) return
+    event.preventDefault()
+    openExternalSafely(event.url)
+  })
+  mainWindow.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame || isAllowedEmbeddedFrameUrl(event.url)) return
+    event.preventDefault()
+    openExternalSafely(event.url)
+  })
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowedEmbeddedFrameUrl(url)) openExternalSafely(url)
+    return { action: 'deny' }
+  })
+  // draw.io 编辑文本时会注册 beforeunload；退出由 RainTool 的 flush 流程统一控制。
+  mainWindow.webContents.on('will-prevent-unload', (event) => event.preventDefault())
 
   // 右键菜单:仅在文本区(textarea/input/contenteditable)或有选中文字时弹出,
   // 避免与其他右键功能冲突。可编辑区弹完整菜单;只读区只弹复制。
@@ -314,6 +586,7 @@ function createWindow() {
 // 改用 productName + 自定义应用菜单设置 macOS 菜单栏显示名。
 
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
   // macOS 应用菜单首项显示 "RainTool"(替代默认的 Electron/raintool)
   const isMac = process.platform === 'darwin'
   const appSubmenu = isMac
@@ -348,6 +621,9 @@ app.whenReady().then(() => {
   )
 
   createWindow()
+  void diagramBridge.start().catch((error) => {
+    console.error('[RainTool MCP] 图纸桥接服务启动失败：', error)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

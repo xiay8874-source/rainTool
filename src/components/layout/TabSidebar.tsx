@@ -486,7 +486,7 @@ function TabMenu({ menu, onClose }: { menu: { id: string; x: number; y: number }
         ) : (
           <MenuBtn onClick={startRename}>✏️ 重命名</MenuBtn>
         )}
-        <MenuBtn onClick={() => { duplicateTab(tab.id); onClose() }}>复制此页</MenuBtn>
+        <MenuBtn onClick={() => { void duplicateTab(tab.id); onClose() }}>复制此页</MenuBtn>
         <MenuBtn onClick={handleFavTab}>★ 收藏此标签</MenuBtn>
         <MenuBtn onClick={() => { togglePin(tab.id); onClose() }}>
           {tab.state.pinned ? '取消固定' : '固定标签页'}
