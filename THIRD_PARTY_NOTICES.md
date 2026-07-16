@@ -14,7 +14,13 @@ RainTool distributes a modified source snapshot. The functional source changes
 are:
 
 - `app/[lang]/page.tsx`: recognize RainTool's embedded mode, use the configured
-  local draw.io URL, and enable draw.io offline mode.
+  local draw.io URL, enable draw.io offline mode, and bridge canonical diagram
+  load/autosave/export plus diagram-only legacy migration.
+- `packages/mcp-server/src/raintool-index.ts`: reuse upstream XML validation and
+  ID-based edit operations with RainTool's authenticated diagram store and MCP
+  management tools.
+- `packages/mcp-server/package.json`: pin reviewed patched AJV/fast-uri
+  transitive versions used by the distributed MCP bundle.
 - `next.config.ts`: pin `outputFileTracingRoot` to this directory so the
   standalone build emits `server.js` at the standalone root instead of nesting
   it under `vendor/next-ai-draw-io/` (Next.js 16 otherwise infers the RainTool
@@ -39,3 +45,8 @@ not modify draw.io source files.
 
 The distributed app contains each license under `Resources/licenses/` and this
 notice at `Resources/THIRD_PARTY_NOTICES.md`.
+
+The bundled RainTool MCP server also contains the MCP SDK, XML DOM/parser, XML
+selector and schema-validation dependencies selected by its esbuild metafile.
+Their exact package versions and license texts are generated at build time in
+`Resources/raintool-mcp/THIRD_PARTY_LICENSES.txt`.

@@ -4,9 +4,9 @@
 // See ../../RAINTOOL_INTEGRATION.md and the repository third-party notices.
 import { usePathname, useRouter } from "next/navigation"
 import { Suspense, useCallback, useEffect, useRef, useState } from "react"
-import { DrawIoEmbed } from "react-drawio"
 import type { ImperativePanelHandle } from "react-resizable-panels"
 import ChatPanel from "@/components/chat-panel"
+import { RainToolDrawIoEmbed } from "@/components/raintool-drawio-embed"
 import {
     ResizableHandle,
     ResizablePanel,
@@ -15,12 +15,14 @@ import {
 import { useDiagram } from "@/contexts/diagram-context"
 import { type DrawioTheme, isDrawioTheme } from "@/lib/drawio-themes"
 import { i18n, type Locale } from "@/lib/i18n/config"
+import { getAllSessionMetadata, getSession } from "@/lib/session-storage"
 
 export default function Home() {
     const {
         drawioRef,
         handleDiagramExport,
         handleDiagramAutoSave,
+        loadDiagram,
         onDrawioLoad,
         resetDrawioReady,
     } = useDiagram()
@@ -38,9 +40,28 @@ export default function Home() {
     const [drawioBaseUrl, setDrawioBaseUrl] = useState(
         process.env.NEXT_PUBLIC_DRAWIO_BASE_URL || "https://embed.diagrams.net",
     )
+    const rainToolEmbedded =
+        process.env.NEXT_PUBLIC_RAINTOOL_EMBEDDED === "true"
 
     const chatPanelRef = useRef<ImperativePanelHandle>(null)
     const isMobileRef = useRef(false)
+    const hasDrawioReadyRef = useRef(false)
+    const activeRainToolDiagramIdRef = useRef<string | null>(null)
+    const pendingRainToolExportRef = useRef<{
+        requestId: string
+        format: "png" | "svg"
+    } | null>(null)
+
+    const postToRainTool = useCallback(
+        (message: Record<string, unknown>) => {
+            if (!rainToolEmbedded || window.parent === window) return
+            window.parent.postMessage(
+                { protocol: "raintool-diagram-v1", ...message },
+                "*",
+            )
+        },
+        [rainToolEmbedded],
+    )
 
     // Load preferences from localStorage after mount
     useEffect(() => {
@@ -77,8 +98,6 @@ export default function Home() {
         // Detect Electron and use bundled draw.io files for offline use
         // Note: react-drawio uses `new URL(baseUrl)` so we need absolute URL
         // Include /index.html because Next.js doesn't auto-serve index.html for directories
-        const rainToolEmbedded =
-            process.env.NEXT_PUBLIC_RAINTOOL_EMBEDDED === "true"
         const electronDetected =
             rainToolEmbedded ||
             (!process.env.NEXT_PUBLIC_DRAWIO_BASE_URL &&
@@ -95,15 +114,126 @@ export default function Home() {
     }, [pathname, router])
 
     const handleDrawioLoad = useCallback(() => {
+        if (hasDrawioReadyRef.current) return
+        hasDrawioReadyRef.current = true
         setIsDrawioReady(true)
         onDrawioLoad()
-    }, [onDrawioLoad])
+        postToRainTool({ type: "raintool:diagram-ready" })
+    }, [onDrawioLoad, postToRainTool])
+
+    // A locally packaged iframe can finish before Electron reports its native
+    // load event. Do not leave the editor hidden forever in that case: the
+    // bridge load below is still safe because Draw.io accepts it once ready.
+    useEffect(() => {
+        if (!isLoaded || isDrawioReady) return
+        const fallback = window.setTimeout(handleDrawioLoad, 3000)
+        return () => window.clearTimeout(fallback)
+    }, [handleDrawioLoad, isDrawioReady, isLoaded])
+
+    const handleEmbeddedAutoSave = useCallback(
+        (data: { xml?: string }) => {
+            handleDiagramAutoSave(data)
+            if (data.xml && activeRainToolDiagramIdRef.current) {
+                postToRainTool({
+                    type: "raintool:diagram-autosave",
+                    diagramId: activeRainToolDiagramIdRef.current,
+                    xml: data.xml,
+                })
+            }
+        },
+        [handleDiagramAutoSave, postToRainTool],
+    )
+
+    const handleEmbeddedExport = useCallback(
+        (data: { data?: string }) => {
+            const pending = pendingRainToolExportRef.current
+            if (pending) {
+                pendingRainToolExportRef.current = null
+                postToRainTool({
+                    type: "raintool:diagram-export-result",
+                    requestId: pending.requestId,
+                    data: data.data,
+                })
+                return
+            }
+            handleDiagramExport(data)
+        },
+        [handleDiagramExport, postToRainTool],
+    )
+
+    // RainTool parent bridge: load external documents, export current canvas,
+    // and migrate legacy IndexedDB diagrams without exposing chat messages.
+    useEffect(() => {
+        if (!rainToolEmbedded || window.parent === window) return
+        const handleMessage = (event: MessageEvent) => {
+            if (event.source !== window.parent) return
+            const message = event.data as Record<string, unknown> | null
+            if (!message || message.protocol !== "raintool-diagram-v1") return
+            if (
+                message.type === "raintool:diagram-load" &&
+                typeof message.diagramId === "string" &&
+                typeof message.xml === "string"
+            ) {
+                activeRainToolDiagramIdRef.current = message.diagramId
+                loadDiagram(message.xml, true)
+                postToRainTool({
+                    type: "raintool:diagram-loaded",
+                    diagramId: message.diagramId,
+                    revision: message.revision,
+                })
+                return
+            }
+            if (
+                message.type === "raintool:diagram-export" &&
+                typeof message.requestId === "string" &&
+                (message.format === "png" || message.format === "svg")
+            ) {
+                pendingRainToolExportRef.current = {
+                    requestId: message.requestId,
+                    format: message.format,
+                }
+                drawioRef.current?.exportDiagram({ format: message.format })
+                return
+            }
+            if (message.type === "raintool:legacy-request") {
+                void (async () => {
+                    const metadata = await getAllSessionMetadata()
+                    const items: Array<{
+                        legacySessionId: string
+                        title: string
+                        xml: string
+                        createdAt: number
+                        updatedAt: number
+                    }> = []
+                    for (const item of metadata) {
+                        if (!item.hasDiagram) continue
+                        const session = await getSession(item.id)
+                        if (!session?.diagramXml) continue
+                        items.push({
+                            legacySessionId: session.id,
+                            title: session.title,
+                            xml: session.diagramXml,
+                            createdAt: session.createdAt,
+                            updatedAt: session.updatedAt,
+                        })
+                    }
+                    postToRainTool({
+                        type: "raintool:legacy-response",
+                        items,
+                    })
+                })()
+            }
+        }
+        window.addEventListener("message", handleMessage)
+        return () => window.removeEventListener("message", handleMessage)
+    }, [drawioRef, loadDiagram, postToRainTool, rainToolEmbedded])
 
     const handleDarkModeChange = () => {
         const newValue = !darkMode
         setDarkMode(newValue)
         localStorage.setItem("next-ai-draw-io-dark-mode", String(newValue))
         document.documentElement.classList.toggle("dark", newValue)
+        hasDrawioReadyRef.current = false
         setIsDrawioReady(false)
         resetDrawioReady()
     }
@@ -111,6 +241,7 @@ export default function Home() {
     const handleDrawioUiChange = (theme: DrawioTheme) => {
         localStorage.setItem("drawio-theme", theme)
         setDrawioUi(theme)
+        hasDrawioReadyRef.current = false
         setIsDrawioReady(false)
         resetDrawioReady()
     }
@@ -124,6 +255,7 @@ export default function Home() {
                 !isInitialRenderRef.current &&
                 newIsMobile !== isMobileRef.current
             ) {
+                hasDrawioReadyRef.current = false
                 setIsDrawioReady(false)
                 resetDrawioReady()
             }
@@ -185,12 +317,13 @@ export default function Home() {
                                 <div
                                     className={`h-full w-full ${isDrawioReady ? "" : "invisible absolute inset-0"}`}
                                 >
-                                    <DrawIoEmbed
+                                    <RainToolDrawIoEmbed
                                         key={`${drawioUi}-${darkMode}-${currentLang}-${isElectron}`}
                                         ref={drawioRef}
                                         autosave
-                                        onAutoSave={handleDiagramAutoSave}
-                                        onExport={handleDiagramExport}
+                                        onIframeLoad={handleDrawioLoad}
+                                        onAutoSave={handleEmbeddedAutoSave}
+                                        onExport={handleEmbeddedExport}
                                         onLoad={handleDrawioLoad}
                                         baseUrl={drawioBaseUrl}
                                         urlParameters={{

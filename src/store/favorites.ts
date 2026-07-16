@@ -9,6 +9,7 @@ export interface FavoriteTab {
   title: string
   input: string
   config?: string
+  diagramId?: string
 }
 
 /** 分组收藏快照(含分组结构) */
@@ -75,12 +76,21 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
   folders: [],
 
   addTab: (name, tab, folderId = null) => {
-    set((s) => ({
-      items: [
-        { id: uid(), kind: 'tab', name, tab, createdAt: Date.now(), folderId },
-        ...s.items,
-      ],
-    }))
+    set((s) => {
+      const existing = tab.diagramId
+        ? s.items.find((item) => item.kind === 'tab' && item.tab?.diagramId === tab.diagramId)
+        : undefined
+      const item: FavoriteItem = {
+        id: existing?.id ?? uid(),
+        kind: 'tab',
+        name,
+        tab,
+        createdAt: existing?.createdAt ?? Date.now(),
+        folderId,
+      }
+      return { items: [item, ...s.items.filter((candidate) => candidate.id !== item.id)] }
+    })
+    if (tab.diagramId) void window.raintool?.updateDiagram({ id: tab.diagramId, favorite: true })
     get().persist()
   },
 
@@ -95,7 +105,11 @@ export const useFavoritesStore = create<FavoritesState>((set, get) => ({
   },
 
   remove: (id) => {
+    const item = get().items.find((candidate) => candidate.id === id)
     set((s) => ({ items: s.items.filter((i) => i.id !== id) }))
+    if (item?.tab?.diagramId) {
+      void window.raintool?.updateDiagram({ id: item.tab.diagramId, favorite: false })
+    }
     get().persist()
   },
 
@@ -174,6 +188,7 @@ export function snapshotTab(tab: Tab) {
     title: tab.title,
     input: tab.state.input,
     config: tab.state.config,
+    diagramId: tab.state.diagramId,
   } as FavoriteTab
 }
 

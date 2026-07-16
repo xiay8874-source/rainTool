@@ -1,3 +1,21 @@
+import type {
+  DiagramChangedEvent,
+  DiagramCreateInput,
+  DiagramDeletedEvent,
+  DiagramDocument,
+  DiagramDuplicateInput,
+  DiagramExportRequest,
+  DiagramExportResult,
+  DiagramListQuery,
+  DiagramListResult,
+  DiagramOpenRequest,
+  DiagramRevisionMetadata,
+  DiagramUpdateInput,
+  DiagramUpdateResult,
+  LegacyDiagramInput,
+  LegacyDiagramMigrationResult,
+} from '../../electron/diagram-types'
+
 /**
  * window.raintool 的统一类型声明。
  *
@@ -49,6 +67,25 @@ export interface RaintoolAPI {
 
   /** 启动固定的本地 AI Draw.io 服务；不接收端口、路径或命令参数 */
   startAiDrawio: () => Promise<AiDrawioStartResult>
+
+  // 统一图纸库
+  listDiagrams: (query?: DiagramListQuery) => Promise<DiagramListResult>
+  getDiagram: (id: string) => Promise<DiagramDocument | null>
+  createDiagram: (input?: DiagramCreateInput) => Promise<DiagramDocument>
+  updateDiagram: (input: DiagramUpdateInput) => Promise<DiagramUpdateResult>
+  duplicateDiagram: (input: DiagramDuplicateInput) => Promise<DiagramDocument>
+  deleteDiagram: (id: string) => Promise<boolean>
+  listDiagramRevisions: (id: string) => Promise<DiagramRevisionMetadata[]>
+  restoreDiagramRevision: (id: string, revision: number, expectedRevision?: number) => Promise<DiagramDocument>
+  migrateLegacyDiagrams: (items: LegacyDiagramInput[]) => Promise<LegacyDiagramMigrationResult>
+  setActiveDiagram: (id: string | null) => Promise<void>
+  setDiagramRendererReady: () => void
+  setDiagramEditorReady: (id: string, ready: boolean) => void
+  completeDiagramExport: (result: DiagramExportResult) => void
+  onDiagramChanged: (cb: (event: DiagramChangedEvent) => void) => () => void
+  onDiagramDeleted: (cb: (event: DiagramDeletedEvent) => void) => () => void
+  onDiagramOpenRequested: (cb: (request: DiagramOpenRequest) => void) => () => void
+  onDiagramExportRequested: (cb: (request: DiagramExportRequest) => void) => () => void
 
   // 退出前 flush:主进程 before-quit / installUpdate 退出前发 app:flush,
   // 渲染进程 await cb 完成异步保存后回 app:flushed,主进程收到才放行退出

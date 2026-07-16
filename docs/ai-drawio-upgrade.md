@@ -38,8 +38,27 @@ browser-origin storage compatibility, and the AI SDK/Next.js runtime contract.
    scripts. Do not transplant only selected AI files.
 4. Reapply only the documented RainTool delta:
 
-   - embedded detection in `app/[lang]/page.tsx`, preserving the upstream
+   - embedded detection and the `raintool-diagram-v1` load/autosave/export/
+     legacy-migration bridge in `app/[lang]/page.tsx`, preserving the upstream
      `NEXT_PUBLIC_DRAWIO_BASE_URL` behavior and forcing offline mode;
+   - `components/raintool-drawio-embed.tsx`, RainTool's narrowly scoped
+     replacement for the upstream `react-drawio` runtime component. It
+     registers the `message` listener before creating the nested local iframe,
+     then verifies the message `WindowProxy` before accepting it. This prevents
+     the Draw.io `init` event race which otherwise leaves the embedded page
+     behind a permanent gray loading layer. Keep the upstream type dependency;
+     do not copy or broadly fork the rest of `react-drawio`;
+   - `packages/mcp-server/src/raintool-index.ts`, reusing the target upstream
+     XML validator and ID operations while retaining RainTool transport,
+     persistent-library tools, multi-page workflow, content-fingerprint edit
+     protection, guided-drawing descriptions, and quality tools;
+   - the upstream MCP helpers `pages.ts`, `edit-gate.ts`, `load-diagram.ts`,
+     `diagram-operations.ts`, and `xml-validation.ts`, followed by RainTool's
+     `diagram-inspection.ts`. Keep the upstream helpers mechanically aligned;
+     keep semantic/layout heuristics isolated in the RainTool-only file;
+   - the reviewed MCP `ajv`/`fast-uri` overrides and regenerated MCP lockfile;
+     remove an override only after the target SDK resolves to an equally fixed
+     compatible version;
    - `next.config.ts`: pin `outputFileTracingRoot` to the vendor directory so
      the standalone build emits `server.js` at the standalone root (Next.js 16
      otherwise nests it under `vendor/next-ai-draw-io/`), and skip the
@@ -50,9 +69,10 @@ browser-origin storage compatibility, and the AI SDK/Next.js runtime contract.
    - `UPSTREAM_VERSION` with exact upstream and Draw.io revisions;
    - `RAINTOOL_INTEGRATION.md` with the new per-file delta.
 
-   Do not modify providers, chat, XML operations, uploads, history, settings,
-   API routes, or storage unless an upgrade-specific compatibility fix is
-   separately justified and documented.
+   Do not modify providers, chat, uploads, AI history, settings, API routes, or
+   model storage unless an upgrade-specific compatibility fix is separately
+   justified and documented. RainTool's page bridge and MCP entry are explicit
+   exceptions; changes to upstream XML operations must be merged into both.
 5. Update the pinned constants and archive checksum in
    `scripts/build-next-standalone.mjs`, this document, integration docs, and
    `THIRD_PARTY_NOTICES.md`. Replace the matching license copies when upstream
@@ -84,6 +104,9 @@ ARM64_NODE=/absolute/path/to/native-arm64-node
 (cd vendor/next-ai-draw-io && npm audit --omit=dev --audit-level=critical)
 npm run build
 npm run build:electron
+npm run build:mcp
+npm run verify:mcp
+npm run test:diagrams
 npm run dist
 npm run verify:package:ai
 ```
@@ -118,9 +141,22 @@ the release notes.
 Then install and launch the generated DMG, and verify:
 
 - RainTool opens immediately; AI service starts only on first AI tab open.
-- The AI tool is single-instance across open, duplicate, favorites, and restart.
+- The same diagram is single-instance; different diagrams open independently.
+- Copy page creates a new document, favorites survive restart, and the manager
+  can search/open/rename/copy/delete/list history/restore.
+- ZCode and Codex can list/get/create/edit/open the same diagram through MCP;
+  a stale revision is rejected instead of overwriting a manual edit.
+- MCP tool discovery includes the multi-page tools (`list_pages`, `add_page`,
+  `rename_page`, `delete_page`) and quality workflow (`inspect_diagram`,
+  `preview_diagram`, `finalize_diagram`). Verify a complex drawing is built in
+  incremental batches, reports a layout warning for overlapping siblings, and
+  cannot finalize until the current revision has been inspected.
 - `/zh` and `/drawio/index.html` load from loopback; Draw.io still opens with
   external network disabled.
+- Cold-start the AI tab repeatedly. Within three seconds the Draw.io toolbar
+  and canvas must be visible; it must never remain as an empty/gray region.
+  Confirm that an editor autosave acknowledgement updates metadata without
+  reloading the iframe while the user is dragging a shape or editing text.
 - A real BYOK provider streams a new diagram, edits it over multiple turns, and
   reports model errors clearly.
 - Existing model settings, sessions/history, templates, theme, and language

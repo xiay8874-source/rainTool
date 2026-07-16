@@ -40,6 +40,12 @@ export const CATEGORIES: ToolCategory[] = [
 
 export const TOOLS: ToolDef[] = [
   {
+    id: 'diagram-manager',
+    categoryId: 'ai',
+    name: '图纸管理',
+    loader: () => import('@/components/tools/diagram-manager'),
+  },
+  {
     id: 'ai-drawio',
     categoryId: 'ai',
     name: 'AI 画图',

@@ -13,6 +13,8 @@ export interface TabState {
   config?: string
   /** 是否固定 */
   pinned?: boolean
+  /** AI Draw.io 绑定的持久化图纸 ID */
+  diagramId?: string
 }
 
 export interface Tab {
@@ -60,14 +62,16 @@ interface AppState {
 
   // 标签操作
   openTab: (toolId: string, title?: string, groupId?: string | null) => string
+  openDiagramTab: (diagramId: string, title?: string, groupId?: string | null) => string
   closeTab: (id: string) => void
   renameTab: (id: string, title: string) => void
-  duplicateTab: (id: string) => string
+  duplicateTab: (id: string) => Promise<string>
   setActiveTab: (id: string | null) => void
   setTabInput: (id: string, input: string) => void
   setTabDiffLeft: (id: string, v: string) => void
   setTabDiffRight: (id: string, v: string) => void
   setTabConfig: (id: string, config: string) => void
+  setTabDiagramId: (id: string, diagramId: string, title?: string) => void
   togglePin: (id: string) => void
   moveTabToGroup: (id: string, groupId: string | null) => void
   reorderTab: (id: string, toIndex: number) => void
@@ -146,14 +150,6 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     openTab: (toolId, title, groupId = null) => {
-      if (toolId === 'ai-drawio') {
-        const existing = get().tabs.find((tab) => tab.toolId === 'ai-drawio')
-        if (existing) {
-          set({ activeTabId: existing.id })
-          pushHistory(existing.id)
-          return existing.id
-        }
-      }
       const id = uid()
       const tab: Tab = {
         id,
@@ -161,6 +157,29 @@ export const useAppStore = create<AppState>((set, get) => {
         title: title ?? '',
         groupId,
         state: { input: '' },
+        createdAt: Date.now(),
+      }
+      set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
+      pushHistory(id)
+      return id
+    },
+
+    openDiagramTab: (diagramId, title, groupId = null) => {
+      const existing = get().tabs.find(
+        (tab) => tab.toolId === 'ai-drawio' && tab.state.diagramId === diagramId,
+      )
+      if (existing) {
+        set({ activeTabId: existing.id })
+        pushHistory(existing.id)
+        return existing.id
+      }
+      const id = uid()
+      const tab: Tab = {
+        id,
+        toolId: 'ai-drawio',
+        title: title ?? 'AI 画图',
+        groupId,
+        state: { input: '', diagramId },
         createdAt: Date.now(),
       }
       set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
@@ -190,13 +209,29 @@ export const useAppStore = create<AppState>((set, get) => {
     renameTab: (id, title) =>
       set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, title } : t)) })),
 
-    duplicateTab: (id) => {
+    duplicateTab: async (id) => {
       const src = get().tabs.find((t) => t.id === id)
       if (!src) return id
       if (src.toolId === 'ai-drawio') {
-        set({ activeTabId: src.id })
-        pushHistory(src.id)
-        return src.id
+        const document = src.state.diagramId
+          ? await window.raintool.duplicateDiagram({ id: src.state.diagramId })
+          : await window.raintool.createDiagram({ title: `${src.title || 'AI 画图'} 副本` })
+        const newId = uid()
+        const copy: Tab = {
+          ...src,
+          id: newId,
+          title: document.title,
+          state: { ...src.state, diagramId: document.id },
+          createdAt: Date.now(),
+        }
+        set((s) => {
+          const idx = s.tabs.findIndex((t) => t.id === id)
+          const tabs = [...s.tabs]
+          tabs.splice(idx + 1, 0, copy)
+          return { tabs, activeTabId: newId }
+        })
+        pushHistory(newId)
+        return newId
       }
       const newId = uid()
       const copy: Tab = {
@@ -242,6 +277,15 @@ export const useAppStore = create<AppState>((set, get) => {
   setTabConfig: (id, config) =>
     set((s) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, state: { ...t.state, config } } : t)),
+    })),
+
+  setTabDiagramId: (id, diagramId, title) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === id
+          ? { ...t, title: title ?? t.title, state: { ...t.state, diagramId } }
+          : t,
+      ),
     })),
 
   togglePin: (id) =>
@@ -319,7 +363,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
   persist: async () => {
     const { tabs, groups, activeTabId } = get()
-    const snapshot = { tabs, groups, activeTabId, version: 2 }
+    const snapshot = { tabs, groups, activeTabId, version: 3 }
     try {
       if (window.raintool?.storeSet) {
         await window.raintool.storeSet('workspace', snapshot)
@@ -346,20 +390,11 @@ export const useAppStore = create<AppState>((set, get) => {
         data = s ? JSON.parse(s) : null
       }
       if (data && (data.tabs?.length || data.groups?.length)) {
-        // AI Draw.io 是重量级单例；兼容清理旧快照中可能存在的重复标签。
-        let aiDrawioTabId: string | null = null
-        const tabs = (data.tabs ?? []).filter((tab) => {
-          if (tab.toolId !== 'ai-drawio') return true
-          if (aiDrawioTabId) return false
-          aiDrawioTabId = tab.id
-          return true
-        })
+        const tabs = data.tabs ?? []
         const activeTabId =
           data.activeTabId && tabs.some((t) => t.id === data!.activeTabId)
             ? data.activeTabId
-            : (data.activeTabId && data.tabs?.some((t) => t.id === data!.activeTabId && t.toolId === 'ai-drawio')
-                ? aiDrawioTabId
-                : (tabs[0]?.id ?? null))
+            : (tabs[0]?.id ?? null)
         set({
           tabs,
           groups: data.groups ?? [],

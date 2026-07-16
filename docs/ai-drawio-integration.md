@@ -4,19 +4,21 @@
 
 RainTool embeds the complete `next-ai-draw-io` Next.js application instead of
 rewriting its AI pipeline. The vendored application continues to own model
-providers, streaming chat, Draw.io XML operations, uploads, session/history
-storage, and settings. RainTool owns the Electron process, its tool/tab UI, the
-local server lifecycle, IPC boundary, navigation policy, packaging, updating,
-and shutdown.
+providers, streaming chat, Draw.io editing, uploads, AI session/history, and
+settings. RainTool owns persistent diagram identity/XML/versioning, the
+Electron process, its tool/tab UI, local server lifecycle, IPC/MCP boundaries,
+navigation policy, packaging, updating, and shutdown.
 
 ```text
 RainTool renderer
-  └─ single AI 画图 tab
+  ├─ 图纸管理
+  └─ one AI 画图 tab per persistent diagramId
        └─ iframe http://127.0.0.1:{6002|13370}/zh
             ├─ Next.js API routes / AI providers
             └─ local /drawio/index.html (offline editor assets)
 
 RainTool main process
+  ├─ diagram repository + authenticated MCP bridge (:13371)
   └─ ai-drawio-service
        └─ production (packaged & unpackaged): utilityProcess.fork(.../next-standalone/server.js)
        └─ dev (RAINTOOL_AI_DRAWIO_DEV=1): wait for external Next dev on :6002
@@ -31,8 +33,10 @@ is deliberately limited and recorded in
 
 - RainTool creates its main window immediately. It does not start or wait for
   Next.js during application startup.
-- Opening **AI 工具 → AI 画图** creates one heavyweight tab. Opening, restoring,
-  or duplicating it again focuses the existing tab.
+- Opening **AI 工具 → AI 画图** creates a persistent document and heavyweight
+  editor tab. The same `diagramId` is single-instance, while different diagrams
+  can remain open in separate keep-alive tabs. Duplicating a page creates a new
+  document rather than a second view of the original.
 - The component calls the fixed `startAiDrawio()` preload API. Concurrent calls
   share one start promise. No renderer-provided path, port, environment, or
   command is accepted.
@@ -53,10 +57,11 @@ is deliberately limited and recorded in
   standalone, and verification rejects any cache inside the app bundle. This
   keeps packaged and future signed applications immutable.
 
-The upstream application stores its BYOK model configuration and UI
-preferences in localStorage and its sessions/templates in browser storage
-(including IndexedDB) under the fixed `http://127.0.0.1:13370` origin. RainTool
-does not copy those values to `~/raintool`. API keys therefore have the same
+The upstream application stores its BYOK model configuration, UI preferences,
+AI sessions and templates in browser storage (including IndexedDB) under the
+fixed `http://127.0.0.1:13370` origin. RainTool stores canonical diagram XML and
+metadata under `~/raintool/diagrams`; a one-time migration copies diagram XML
+only and leaves chat/API keys in the upstream origin. API keys therefore have the same
 local-at-rest protection as upstream browser localStorage; they are not placed
 in macOS Keychain in this version. AI calls require network access, while the
 bundled Draw.io editor remains available offline.
@@ -83,6 +88,11 @@ bundled Draw.io editor remains available offline.
 Important paths:
 
 - `vendor/next-ai-draw-io/`: fixed, buildable upstream source snapshot.
+- `vendor/next-ai-draw-io/components/raintool-drawio-embed.tsx`: minimal
+  message bridge for the nested Draw.io iframe. It must attach its listener
+  before the iframe is created; upstream's passive-effect timing can miss the
+  local editor's initial `init` event and leave the page gray. It accepts
+  messages only from the actual iframe `contentWindow`.
 - `electron/ai-drawio-service.ts`: lifecycle and structured start failures.
 - `scripts/build-next-standalone.mjs`: fixed Draw.io preparation, `npm ci`,
   embedded Next.js build, standalone assembly, and symlink flattening.
@@ -90,6 +100,15 @@ Important paths:
   and native Mach-O architecture verification.
 - `scripts/verify-packaged-ai.mjs`: post-electron-builder verification of the
   actual app bundle, DMG, licenses, notices, Next runtime, and arm64 binaries.
+- `electron/diagram-repository.ts` and `electron/diagram-bridge-server.ts`:
+  canonical diagram storage, revision conflicts, and authenticated loopback RPC.
+- `vendor/next-ai-draw-io/packages/mcp-server/src/raintool-index.ts`: official
+  MCP workflow adapted to the persistent RainTool store, including multi-page
+  tools and the guided draft → edit → inspect → preview → finalize flow.
+- `vendor/next-ai-draw-io/packages/mcp-server/src/pages.ts`, `edit-gate.ts`,
+  `load-diagram.ts`, and `diagram-inspection.ts`: page-scoped XML operations,
+  content-fingerprint manual-edit protection, compressed file loading, and
+  RainTool's deterministic layout checks.
 - `build/next-standalone/`: generated package input; never committed.
 - `LICENSES/` and `THIRD_PARTY_NOTICES.md`: distributable notices.
 
@@ -104,6 +123,9 @@ npm run dev
 # RainTool checks (do not build AI standalone)
 npm run build
 npm run build:electron
+npm run test:diagrams
+npm run build:mcp
+npm run verify:mcp
 
 # Local production-style run; builds and forks build/next-standalone on :13370
 npm run start:prod
@@ -172,6 +194,16 @@ file override), rebuilding, and auditing the actual traced package again.
 - `START_FAILED`: inspect the displayed stdout/stderr tail. Dependency or
   executable incompatibility normally requires rebuilding the package.
 - An iframe-only error offers **重新加载** without restarting the server.
+- A persistent gray AI canvas after server readiness indicates a Draw.io
+  initialization handshake failure. Verify that the locally maintained
+  `raintool-drawio-embed.tsx` is still used by `app/[lang]/page.tsx`, then
+  rebuild with `npm run build:ai`; do not paper over it by changing ports or
+  allowing external Draw.io hosts.
+- If manipulating shapes or editing labels is repeatedly interrupted, inspect
+  `src/components/tools/ai-drawio.tsx`. The `onDiagramChanged` event that
+  acknowledges this renderer's own autosave must update only the local
+  revision/XML state; it must not call `loadDocumentIntoFrame`. Reloading the
+  iframe is reserved for an external/MCP update or a revision conflict.
 - To verify offline editor packaging manually, disconnect the network after
   startup and load `http://127.0.0.1:13370/drawio/index.html`; the editor assets
   must still return locally.

@@ -11,7 +11,30 @@ as a standalone server and owns the desktop lifecycle.
   offline desktop embedding. This enables draw.io's `offline=true` URL
   parameter even though the Next.js iframe does not receive upstream's
   `window.electronAPI`. The existing `NEXT_PUBLIC_DRAWIO_BASE_URL` remains the
-  source of the absolute local draw.io URL.
+  source of the absolute local draw.io URL. The same page implements the
+  `raintool-diagram-v1` parent bridge for canonical XML load, autosave, export,
+  and one-time diagram-only migration from legacy IndexedDB sessions.
+- `packages/mcp-server/src/raintool-index.ts`: retain upstream XML validation
+  and ID-based operations but replace the separate browser polling session with
+  RainTool's authenticated persistent diagram bridge. It adds diagram library,
+  metadata, history and selection tools for ZCode and Codex. Its tool
+  descriptions enforce the guided workflow: small initial skeleton, incremental
+  edits, structural/layout inspection, rendered preview, then finalization.
+- `packages/mcp-server/src/pages.ts`, `edit-gate.ts`, `load-diagram.ts`,
+  `diagram-operations.ts`, and `xml-validation.ts`: mechanically imported from
+  upstream `main` commit `4b072283202d3fe4869acd847ee897ad1165d73d` on
+  2026-07-17. They provide canonical multi-page `<mxfile>` handling, compressed
+  `.drawio` loading, page-scoped ID operations, and content-fingerprint edit
+  protection. These are an intentional MCP-only forward-port; the embedded
+  Next application remains at the pinned v0.4.16 snapshot above.
+- `packages/mcp-server/src/diagram-inspection.ts`: RainTool-only deterministic
+  quality gate. It reports invalid references/geometry, dangling edges,
+  sibling overlaps, overly dense or oversized pages, and label density. It is
+  not an AI semantic reviewer: `preview_diagram` deliberately returns a local
+  PNG/SVG path for a vision-capable client to compare against user requirements.
+- `packages/mcp-server/package.json` and lockfile: override the MCP SDK's AJV
+  and fast-uri transitive versions to the reviewed patched releases. Recheck
+  these overrides against the target SDK on every upstream upgrade.
 - `next.config.ts`: set `outputFileTracingRoot` to this directory. Next.js 16
   otherwise infers the monorepo root from the nearest `.git` (the RainTool
   repo root) and nests the standalone output under `vendor/next-ai-draw-io/`,
@@ -25,8 +48,9 @@ as a standalone server and owns the desktop lifecycle.
   packaged or signed application never writes inside its Resources directory.
 - `UPSTREAM_VERSION`: records the exact upstream and draw.io versions consumed
   by the root build scripts.
-- This file documents the delta. No AI provider, chat, XML, upload, session,
-  history, settings, API route, or storage code is changed.
+- This file documents the delta. No AI provider, chat, upload, model setting,
+  API route, or AI message-history logic is changed. Diagram XML transport and
+  persistence are intentionally integrated with RainTool.
 
 The root build generates `public/drawio/`, `.next/`, and `node_modules/`; they
 are build artifacts and must not be committed.

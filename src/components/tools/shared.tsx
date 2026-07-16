@@ -2,6 +2,8 @@ import type { ReactNode, RefObject } from 'react'
 
 // 工具组件统一 props
 export interface ToolProps {
+  /** 当前 RainTool 标签 ID，供需要标签级状态的工具使用 */
+  tabId?: string
   input: string
   onInput: (v: string) => void
   config?: string
@@ -11,6 +13,9 @@ export interface ToolProps {
   diffRight?: string
   onDiffLeft?: (v: string) => void
   onDiffRight?: (v: string) => void
+  /** AI Draw.io 的持久化图纸 ID */
+  diagramId?: string
+  onDiagramId?: (id: string, title?: string) => void
 }
 
 // 左输入右输出的通用布局
