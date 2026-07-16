@@ -264,21 +264,6 @@ function inspectionResult(document: DiagramDocument, inspection: DiagramInspecti
     }, null, 2)
 }
 
-function assertInitialDraftSize(xml: string): void {
-    const inspection = inspectDiagramXml(xml)
-    if (inspection.summary.vertices > 8 || inspection.summary.edges > 10) {
-        throw new Error(
-            `REJECTED_LARGE_INITIAL_DIAGRAM: received ${inspection.summary.vertices} visible nodes and ` +
-            `${inspection.summary.edges} edges; the first submission allows at most 8 nodes and 10 edges.\n\n` +
-            "Do not retry create_new_diagram with the same complete diagram. Recover as follows:\n" +
-            "1. Call create_new_diagram with only the main actors and happy-path skeleton.\n" +
-            "2. Add the remaining nodes and edges through edit_diagram in batches of 2-8 operations; use add_page for unrelated scenarios.\n" +
-            "3. When construction is finished, call inspect_diagram, preview_diagram, then finalize_diagram.\n\n" +
-            "This rejection is intentional: it forces incremental, inspectable drawing instead of an unreadable one-shot result.",
-        )
-    }
-}
-
 async function writeRenderedPreview(
     document: DiagramDocument,
     format: "png" | "svg",
@@ -313,7 +298,7 @@ server.prompt("diagram-workflow", "High-quality workflow for drawing in RainTool
             type: "text",
             text: `Use RainTool as the shared live diagram workspace.
 1. Call start_session with the audience and acceptance requirements.
-2. For a complex request, create_new_diagram with a small skeleton only, then use edit_diagram in 2-8 operation batches so the user sees the drawing evolve.
+2. For a complex request, prefer a small first pass and incremental edits so the user can review progress; a complete initial XML is also supported when it suits the task.
 3. Put unrelated scenarios on separate pages with add_page; do not compress a large business process into one page.
 4. Call inspect_diagram after each substantial change. Fix every error; OVERLAP is a hard error and cannot be waived.
 5. Call preview_diagram and visually compare the rendered image against the requirements before finalize_diagram.
@@ -386,8 +371,7 @@ server.registerTool("open_diagram", {
 server.registerTool("create_new_diagram", {
     description: `Create a NEW RainTool diagram from XML. This REPLACES the current document, including every page, so never use it for edits.
 
-Guided drawing is mandatory for complex diagrams: create only a skeleton (at most 8 visible nodes and 10 edges), then use edit_diagram in 2-8 operation batches. This makes changes visible immediately and prevents a large unreadable one-shot result.
-If this tool rejects a large submission, follow its recovery steps exactly; do not retry with the same full XML.
+For complex diagrams, prefer a small first pass and follow with reviewable edit_diagram batches. Complete initial XML is supported when it is more appropriate for the requested diagram.
 
 ACCEPTED XML: a bare <mxGraphModel> or a full <mxfile> with one or more <diagram> pages. Every page reserves cell IDs 0 and 1.
 
@@ -395,7 +379,7 @@ LAYOUT RULES PER PAGE:
 - Keep unrelated scenarios on separate pages.
 - Start around x=40, y=40 and keep sibling nodes 150-200px apart.
 - Use parent=1 for top-level shapes and unique IDs within a page.
-- Use edgeStyle=orthogonalEdgeStyle, explicit exitX/exitY/entryX/entryY, and route around obstacles with clearance.
+- Use geometry appropriate to the diagram type: ordinary flow diagrams benefit from orthogonal routed edges; sequence diagrams may use explicit sourcePoint/targetPoint lifelines and messages.
 - Keep labels concise; implementation details belong in notes or a dedicated page.
 
 After creating or editing, call inspect_diagram, preview_diagram, then finalize_diagram.`,
@@ -406,7 +390,6 @@ After creating or editing, call inspect_diagram, preview_diagram, then finalize_
 }, async ({ xml: inputXml, title }) => {
     try {
         const validated = normalizedDiagramXml(inputXml)
-        assertInitialDraftSize(validated.xml)
         let document: DiagramDocument
         try {
             const current = await resolveDiagram()
@@ -430,8 +413,8 @@ After creating or editing, call inspect_diagram, preview_diagram, then finalize_
         await rpc<DiagramDocument>("diagram.open", { id: document.id })
         const fixMessage = validated.fixes.length ? `\nAuto-fixes: ${validated.fixes.join(", ")}` : ""
         return textResult(
-            `Diagram skeleton created successfully.\n\n${documentSummary(document)}${fixMessage}\n` +
-            "Next: add details with edit_diagram, then inspect_diagram and preview_diagram before finalize_diagram.",
+            `Diagram created successfully.\n\n${documentSummary(document)}${fixMessage}\n` +
+            "Use inspect_diagram and preview_diagram when you want a quality review before finalize_diagram.",
         )
     } catch (error) {
         return errorResult(error)
@@ -644,12 +627,11 @@ server.registerTool("preview_diagram", {
 })
 
 server.registerTool("finalize_diagram", {
-    description: "Mark the current diagram ready only after inspect_diagram ran on this exact revision and preview_diagram was visually reviewed. Errors, including OVERLAP, always block finalization. Warnings block by default; set allow_warnings only after explicitly explaining the accepted trade-off to the user.",
+    description: "Mark the current diagram ready only after inspect_diagram ran on this exact revision and preview_diagram was visually reviewed. Structural errors, including OVERLAP, always block finalization. Quality warnings are advisory and remain visible in the result.",
     inputSchema: {
         id: z.string().optional().describe("Diagram ID; defaults to the current session diagram."),
-        allow_warnings: z.boolean().optional().describe("Accept remaining inspection warnings after explaining them to the user."),
     },
-}, async ({ id, allow_warnings = false }) => {
+}, async ({ id }) => {
     try {
         const document = await resolveDiagram(id)
         const review = qualityReviews.get(document.id)
@@ -659,10 +641,7 @@ server.registerTool("finalize_diagram", {
         if (review.inspection.errors.length > 0) {
             throw new Error(`Quality inspection found ${review.inspection.errors.length} error(s). Fix them before finalizing.`)
         }
-        if (review.inspection.warnings.length > 0 && !allow_warnings) {
-            throw new Error(`Quality inspection found ${review.inspection.warnings.length} warning(s). Fix them or explain the accepted trade-off and call finalize_diagram with allow_warnings=true.`)
-        }
-        return textResult(`Diagram finalized: ${documentSummary(document)}. Structural inspection passed${review.inspection.warnings.length ? ` with ${review.inspection.warnings.length} accepted warning(s)` : ""}.`)
+        return textResult(`Diagram finalized: ${documentSummary(document)}. Structural inspection passed${review.inspection.warnings.length ? `; ${review.inspection.warnings.length} advisory warning(s) remain for visual or domain review` : ""}.`)
     } catch (error) {
         return errorResult(error)
     }

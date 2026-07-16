@@ -11,6 +11,7 @@ const ROOT = path.resolve(import.meta.dirname, '..')
 const MCP_ENTRY = path.join(ROOT, 'build', 'raintool-mcp', 'index.cjs')
 const INITIAL_XML = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" value="Initial" vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell></root></mxGraphModel>'
 const LARGE_INITIAL_XML = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>${Array.from({ length: 9 }, (_, index) => `<mxCell id="node-${index}" value="Node ${index}" vertex="1" parent="1"><mxGeometry x="${40 + index * 150}" y="40" width="120" height="60" as="geometry"/></mxCell>`).join('')}</root></mxGraphModel>`
+const POSITIONED_SEQUENCE_XML = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="sender" value="Sender" vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell><mxCell id="receiver" value="Receiver" vertex="1" parent="1"><mxGeometry x="300" y="40" width="120" height="60" as="geometry"/></mxCell><mxCell id="message" value="call" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="100" y="160" as="sourcePoint"/><mxPoint x="360" y="160" as="targetPoint"/></mxGeometry></mxCell></root></mxGraphModel>'
 
 class McpProcess {
   constructor(authFile) {
@@ -115,11 +116,13 @@ test('MCP creates, reads and safely edits the same persistent RainTool diagram',
     mcp = new McpProcess(path.join(directory, 'mcp-auth.json'))
     await mcp.initialize()
     await mcp.call('start_session', { title: 'Codex 实时图纸' })
-    const oneShot = await mcp.callResult('create_new_diagram', { xml: LARGE_INITIAL_XML, stage: 'complete' })
-    assert.equal(oneShot.isError, true)
-    assert.match(oneShot.content[0].text, /REJECTED_LARGE_INITIAL_DIAGRAM/)
-    assert.match(oneShot.content[0].text, /Do not retry create_new_diagram/)
-    assert.match(oneShot.content[0].text, /inspect_diagram, preview_diagram, then finalize_diagram/)
+    await mcp.call('create_new_diagram', { xml: LARGE_INITIAL_XML })
+    const largeDiagram = await mcp.call('get_diagram')
+    assert.match(largeDiagram.content[0].text, /node-8/)
+    await mcp.call('create_new_diagram', { xml: POSITIONED_SEQUENCE_XML })
+    const sequenceInspection = JSON.parse((await mcp.call('inspect_diagram')).content[0].text)
+    assert.equal(sequenceInspection.errors.length, 0)
+    assert.equal(sequenceInspection.warnings.some((item) => item.code === 'DANGLING_EDGE'), false)
     await mcp.call('create_new_diagram', { xml: INITIAL_XML })
     const before = await mcp.call('get_diagram')
     assert.match(before.content[0].text, /value="Initial"/)
@@ -182,11 +185,22 @@ test('MCP supports official multi-page editing and blocks completion until inspe
       }],
     })
 
+    await mcp.call('edit_diagram', {
+      page_name: '异常流程',
+      operations: [{
+        operation: 'add',
+        cell_id: 'advisory-note',
+        new_xml: '<mxCell id="advisory-note" value="This intentionally long advisory label demonstrates that layout feedback remains visible without blocking completion of an otherwise structurally valid diagram." vertex="1" parent="1"><mxGeometry x="40" y="180" width="520" height="60" as="geometry"/></mxCell>',
+      }],
+    })
+
     const inspection = await mcp.call('inspect_diagram')
     const report = JSON.parse(inspection.content[0].text)
     assert.equal(report.passed, true)
     assert.equal(report.summary.pages, 2)
-    await mcp.call('finalize_diagram')
+    assert.equal(report.warnings.some((item) => item.code === 'LONG_LABEL'), true)
+    const warningFinalization = await mcp.call('finalize_diagram')
+    assert.match(warningFinalization.content[0].text, /advisory warning/)
 
     await mcp.call('get_diagram')
     await mcp.call('edit_diagram', {
@@ -201,9 +215,6 @@ test('MCP supports official multi-page editing and blocks completion until inspe
     const finalization = await mcp.callResult('finalize_diagram')
     assert.equal(finalization.isError, true)
     assert.match(finalization.content[0].text, /error/)
-    const waivedFinalization = await mcp.callResult('finalize_diagram', { allow_warnings: true })
-    assert.equal(waivedFinalization.isError, true)
-    assert.match(waivedFinalization.content[0].text, /error/)
   } finally {
     mcp?.stop()
     await bridge.stop()
