@@ -151,8 +151,13 @@ export function inspectDiagramXml(
                 summary.edges++
                 const source = cell.getAttribute("source")
                 const target = cell.getAttribute("target")
+                const geometry = Array.from(cell.children).find((child) => child.tagName === "mxGeometry")
+                const pointRoles = new Set(Array.from(geometry?.children || []).map((child) => child.getAttribute("as")))
+                const hasExplicitEndpoints = pointRoles.has("sourcePoint") && pointRoles.has("targetPoint")
                 if (!source || !target) {
-                    issue(warnings, "warning", "DANGLING_EDGE", `Edge ${id} is missing ${!source ? "source" : "target"}.`, pageName, [id])
+                    if (!hasExplicitEndpoints) {
+                        issue(warnings, "warning", "DANGLING_EDGE", `Edge ${id} is missing ${!source ? "source" : "target"}.`, pageName, [id])
+                    }
                 } else if (!ids.has(source) || !ids.has(target)) {
                     issue(errors, "error", "MISSING_EDGE_ENDPOINT", `Edge ${id} references a missing endpoint.`, pageName, [id, source, target])
                 }
