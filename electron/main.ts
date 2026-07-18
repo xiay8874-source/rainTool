@@ -12,6 +12,7 @@ import {
   startAiDrawioServer,
   stopAiDrawioServer,
 } from './ai-drawio-service.js'
+import { initAiPlatform, getAiPlatform } from './ai-platform/index.js'
 import { DiagramBridgeServer } from './diagram-bridge-server.js'
 import {
   DiagramConflictError,
@@ -470,7 +471,19 @@ app.on('before-quit', (e) => {
   e.preventDefault()
   if (shutdownStarted) return
   shutdownStarted = true
-  Promise.all([flushBeforeExit(), stopAiDrawioServer(), diagramBridge.stop()]).finally(() => {
+  // Abort active AI runs FIRST so outbound streams stop promptly, before
+  // awaiting flush/Draw.io/MCP shutdown tasks. Then clear all in-memory
+  // attachment payloads (P2: ephemeral context must not survive quit). P4:
+  // await MCP client disconnect so child processes (stdio) are closed before
+  // the app exits — fire-and-forget would race app.quit() and leak processes.
+  getAiPlatform()?.cancelAll('window-closed')
+  getAiPlatform()?.clearContextVault()
+  Promise.all([
+    flushBeforeExit(),
+    stopAiDrawioServer(),
+    diagramBridge.stop(),
+    getAiPlatform()?.disconnectAllMcp() ?? Promise.resolve(),
+  ]).finally(() => {
     shutdownDone = true
     app.quit()
   })
@@ -621,6 +634,14 @@ app.whenReady().then(() => {
   )
 
   createWindow()
+  // AI Platform: initialize after the window exists so IPC can reach it.
+  // Data lives under app.getPath('userData')/ai — never a hard-coded home path.
+  initAiPlatform({
+    mainWindow: () => mainWindow,
+    assertTrustedRenderer,
+    diagramRepository,
+    onDiagramChanged: emitDiagramChanged,
+  })
   void diagramBridge.start().catch((error) => {
     console.error('[RainTool MCP] 图纸桥接服务启动失败：', error)
   })

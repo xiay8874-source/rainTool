@@ -36,6 +36,8 @@ export interface CodeAreaHandle {
   setScrollTop(v: number): void
   /** 订阅滚动事件,返回取消订阅函数 */
   onScroll(cb: (scrollTop: number) => void): () => void
+  /** P2: 返回当前选中的文本(无选中返回空串),用于 JSON Workbench 附加选区到 AI */
+  getSelectionText(): string
 }
 
 export const CodeArea = forwardRef<CodeAreaHandle, {
@@ -191,6 +193,13 @@ export const CodeArea = forwardRef<CodeAreaHandle, {
     onScroll(cb: (scrollTop: number) => void) {
       scrollCallbacks.current.add(cb)
       return () => { scrollCallbacks.current.delete(cb) }
+    },
+    getSelectionText() {
+      const ta = taRef.current
+      if (!ta) return ''
+      const { selectionStart, selectionEnd } = ta
+      if (selectionStart === selectionEnd) return ''
+      return value.slice(selectionStart, selectionEnd)
     },
   }), [value, onChange])
 

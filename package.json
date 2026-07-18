@@ -22,7 +22,8 @@
     "preview": "vite preview",
     "start": "npm run start:prod",
     "start:prod": "npm run build:ai && npm run build:mcp && npm run build && npm run build:electron && electron .",
-    "dist": "npm run build:ai && npm run build:mcp && npm run build && npm run build:electron && electron-builder --mac && npm run verify:package:ai"
+    "dist": "npm run build:ai && npm run build:mcp && npm run build && npm run build:electron && electron-builder --mac && npm run verify:package:ai",
+    "test:ai": "npm run build:electron && node --test tests/ai-credential-vault.test.mjs tests/ai-conversation-repository.test.mjs tests/ai-provider-registry.test.mjs tests/ai-runtime.test.mjs tests/ai-dep-engine.test.mjs tests/ai-capability-enforcement.test.mjs tests/ai-eligibility.test.mjs tests/ai-sensitivity-budget.test.mjs tests/ai-context-vault-artifacts.test.mjs tests/ai-context-runtime-ipc.test.mjs tests/ai-tools-approval.test.mjs tests/ai-diagram-tools.test.mjs tests/ai-mcp-manager.test.mjs"
   },
   "build": {
     "appId": "com.xiay8874.raintool",
@@ -74,7 +75,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "hardenedRuntime": false,
@@ -83,15 +86,27 @@
     "dmg": {
       "title": "${productName} ${version}",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zustand": "^4.5.5"
+    "zustand": "^4.5.5",
+    "@ai-sdk/openai": "2.0.114",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ai": "5.0.216",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

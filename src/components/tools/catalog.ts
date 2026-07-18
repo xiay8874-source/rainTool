@@ -51,6 +51,12 @@ export const TOOLS: ToolDef[] = [
     name: 'AI 画图',
     loader: () => import('@/components/tools/ai-drawio'),
   },
+  {
+    id: 'ai-assistant',
+    categoryId: 'ai',
+    name: 'AI 助手',
+    loader: () => import('@/components/tools/ai-assistant'),
+  },
   // JSON
   {
     id: 'json-workbench',

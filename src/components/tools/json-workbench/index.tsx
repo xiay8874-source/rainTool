@@ -7,6 +7,13 @@ import { JsonDiff } from './JsonDiff'
 import { CodeArea, type CodeAreaHandle } from '../CodeArea'
 import { FindBar } from '../FindBar'
 import { escapeRegExp } from './highlight'
+import { useAiStore } from '@/store/ai'
+
+/** Web Crypto sha256 hex (renderer-side revision hash for stale-target check). */
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 type Mode = 'tree' | 'diff'
 
@@ -125,6 +132,171 @@ export default function JsonWorkbench({ input, onInput, diffLeft, diffRight, onD
     if (r.ok && r.result) onInput(r.result)
   }
 
+  // P2: attach current JSON SELECTION to the AI Assistant as a context chip.
+  // Falls back to the full input ONLY when no text is selected — and the label
+  // honestly reflects which one was attached ("选区" vs "全部"). The raw text is
+  // sent once via the ingest IPC to the main-process vault; it is never
+  // returned to the renderer, logged, or persisted. This is the ONLY way JSON
+  // reaches the model — explicit user action, no silent component context.
+  const aiStore = useAiStore()
+  const [aiMsg, setAiMsg] = useState<string | null>(null)
+  const attachToAi = async () => {
+    const selection = codeRef.current?.getSelectionText() ?? ''
+    const text = selection || input
+    if (!text.trim()) return
+    const label = selection ? 'JSON 选区' : 'JSON 全部'
+    setAiMsg(null)
+    try {
+      await aiStore.ingestAttachment('json-workbench', label, text)
+      setAiMsg(`已附加${label}到 AI 助手`)
+    } catch {
+      setAiMsg('附加失败')
+    }
+    setTimeout(() => setAiMsg(null), 2000)
+  }
+
+  // P2: generate a repair proposal as a read-only JSON artifact. This NEVER
+  // alters the editor text — it creates an artifact the user can preview/copy.
+  // No apply/writeback action exists.
+  const [proposalMsg, setProposalMsg] = useState<string | null>(null)
+  const generateRepairProposal = async () => {
+    if (!input.trim()) return
+    setProposalMsg(null)
+    try {
+      const r = repairJson(input)
+      if (!r.ok || !r.result) {
+        setProposalMsg('无法生成修复提案')
+        return
+      }
+      await window.raintool.aiArtifactCreate({
+        kind: 'json',
+        title: 'JSON 修复提案',
+        content: r.result,
+      })
+      setProposalMsg('修复提案已生成（只读，可在 Artifacts 查看）')
+    } catch {
+      setProposalMsg('生成失败')
+    }
+    setTimeout(() => setProposalMsg(null), 3000)
+  }
+
+  // -------------------------------------------------------------------------
+  // P3: direct-tool invocation (inspect / propose / apply)
+  // -------------------------------------------------------------------------
+  // These start a direct-tool run via the store — no model stream, no
+  // profile/credential required. The runtime resolves + Zod-validates each
+  // call, runs the tool state machine, and emits tool/approval events.
+  //
+  // The apply button triggers json.apply-proposal-demo (a WRITE tool): the
+  // runtime proposes an approval, the ApprovalCard in the AI Assistant renders
+  // the approve/reject UI, and on approve the runtime emits an apply-request
+  // event. The subscription below handles that event: it checks the current
+  // editor revision matches (stale-target detection), applies the proposal via
+  // onInput, and acks via aiApplyAck. If the editor changed (revision mismatch),
+  // it acks applied:false — the tool fails stale-target, no mutation.
+
+  const [p3Msg, setP3Msg] = useState<string | null>(null)
+  const showP3Msg = (msg: string) => {
+    setP3Msg(msg)
+    setTimeout(() => setP3Msg(null), 3000)
+  }
+
+  /** Get the current selection text, falling back to the full input. */
+  const selectionOrInput = () => codeRef.current?.getSelectionText() ?? ''
+  const effectiveSelection = () => {
+    const sel = selectionOrInput()
+    return sel.trim() ? sel : input
+  }
+
+  const inspectSelection = async () => {
+    const selection = effectiveSelection()
+    if (!selection.trim()) { showP3Msg('选区为空'); return }
+    await aiStore.startToolRun([
+      { toolId: 'json.inspect-selection', rawInput: { selection } },
+    ])
+  }
+
+  const proposeRepair = async () => {
+    const selection = effectiveSelection()
+    if (!selection.trim()) { showP3Msg('选区为空'); return }
+    await aiStore.startToolRun([
+      { toolId: 'json.propose-repair', rawInput: { selection } },
+    ])
+  }
+
+  const applyProposal = async () => {
+    // Full-document-only safety rule: the write tool only ever applies a repair
+    // built against the COMPLETE editor document. A partial selection is
+    // forbidden — it would let the tool bind a revision that does not reflect
+    // the live editor input, defeating stale-target detection. If the user has
+    // a non-empty selection that differs from the full input, refuse outright
+    // and ask them to clear the selection before retrying.
+    const selection = selectionOrInput()
+    if (selection.trim() && selection !== input) {
+      showP3Msg('应用提案仅支持完整 JSON 文档：检测到选区与编辑器内容不一致，请清除选区后重试。')
+      return
+    }
+    if (!input.trim()) { showP3Msg('输入为空'); return }
+    // Generate the proposal from the full document (never a selection) so the
+    // user sees what will be applied. The tool's executor re-generates it from
+    // the validated input; the contentHash binds the exact proposal. The
+    // runtime's revision hashes the complete editor input (document), not a
+    // selection — so stale-target detection reflects the live editor state.
+    const r = repairJson(input)
+    if (!r.ok || !r.result) { showP3Msg('无法生成修复提案'); return }
+    let proposal = r.result
+    try { proposal = JSON.stringify(JSON.parse(r.result), null, 2) } catch { /* keep raw */ }
+    await aiStore.startToolRun([
+      { toolId: 'json.apply-proposal-demo', rawInput: { document: input, selection: input, proposal } },
+    ])
+  }
+
+  // P3: subscribe to apply-request events. When the runtime emits an
+  // apply-request for a json-workbench:editor-input scope, verify the current
+  // editor revision matches the request's revision (stale-target detection).
+  // If it matches, apply the proposal via onInput and ack applied:true. If the
+  // editor changed (revision mismatch), ack applied:false — no mutation.
+  useEffect(() => {
+    return window.raintool.onAiRunEvent((event) => {
+      if (event.type !== 'apply-request') return
+      const p = event.payload
+      if (p.targetScope !== 'json-workbench:editor-input') return
+      // Compute the current editor revision (sha256 of the current input).
+      // The request's revision is sha256 of the complete editor input (document)
+      // the proposal was built against — not a selection. If the editor content
+      // changed since the proposal, the revision won't match → refuse (applied:false).
+      void (async () => {
+        const currentRev = await sha256Hex(input)
+        if (currentRev !== p.revision) {
+          // Stale editor — refuse. The tool fails stale-target; no mutation.
+          try {
+            await window.raintool.aiApplyAck({
+              applyId: p.applyId,
+              applied: false,
+              targetScope: p.targetScope,
+              contentHash: p.contentHash,
+              revision: p.revision,
+              reason: '编辑器内容已变更，提案过期',
+            })
+          } catch { /* ack rejected (run may have terminalized) — ignore */ }
+          return
+        }
+        // Revision matches — apply the proposal by replacing the editor input.
+        // The proposal already passed sensitivity + hash checks at approval.
+        onInput(p.proposal)
+        try {
+          await window.raintool.aiApplyAck({
+            applyId: p.applyId,
+            applied: true,
+            targetScope: p.targetScope,
+            contentHash: p.contentHash,
+            revision: p.revision,
+          })
+        } catch { /* ack rejected — the run may have timed out; ignore */ }
+      })()
+    })
+  }, [input, onInput])
+
   // ===== 查找/替换(树形模式:作用于输入区 CodeArea,树形做高亮镜像) =====
   const codeRef = useRef<CodeAreaHandle>(null)
   const [findOpen, setFindOpen] = useState(false)
@@ -232,9 +404,32 @@ export default function JsonWorkbench({ input, onInput, diffLeft, diffRight, onD
               <ActionBtn onClick={unescape}>反转义</ActionBtn>
             </>
           )}
+          {/* P2: attach JSON selection to AI (explicit chip; raw text goes to main-process vault once via ingest) */}
+          {mode === 'tree' && <ActionBtn onClick={attachToAi}>附加选区到 AI</ActionBtn>}
+          {/* P2: generate repair proposal as read-only artifact (no editor writeback) */}
+          {mode === 'tree' && <ActionBtn onClick={generateRepairProposal}>生成修复提案</ActionBtn>}
+          {/* P3: direct-tool invocation buttons (inspect/propose/apply). These
+              start a direct-tool run via the store — no model stream, no
+              profile/credential required. The apply button triggers a write
+              tool that needs one-time approval; the ApprovalCard in the AI
+              Assistant renders the approve/reject UI. */}
+          {mode === 'tree' && <ActionBtn onClick={inspectSelection}>P3 检查选区</ActionBtn>}
+          {mode === 'tree' && <ActionBtn onClick={proposeRepair}>P3 修复提案</ActionBtn>}
+          {mode === 'tree' && <ActionBtn onClick={applyProposal}>P3 应用提案</ActionBtn>}
           <CopyBtn text={formatted} label="复制" />
         </div>
       </div>
+
+      {/* P2 status messages for AI attach / repair proposal */}
+      {aiMsg && (
+        <div className="border-b border-line bg-bg-subtle px-4 py-1 text-caption text-ink-secondary">{aiMsg}</div>
+      )}
+      {proposalMsg && (
+        <div className="border-b border-line bg-bg-subtle px-4 py-1 text-caption text-ink-secondary">{proposalMsg}</div>
+      )}
+      {p3Msg && (
+        <div className="border-b border-line bg-bg-subtle px-4 py-1 text-caption text-ink-secondary">{p3Msg}</div>
+      )}
 
       {/* 错误提示 */}
       {errInfo && (

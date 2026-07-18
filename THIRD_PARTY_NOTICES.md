@@ -50,3 +50,55 @@ The bundled RainTool MCP server also contains the MCP SDK, XML DOM/parser, XML
 selector and schema-validation dependencies selected by its esbuild metafile.
 Their exact package versions and license texts are generated at build time in
 `Resources/raintool-mcp/THIRD_PARTY_LICENSES.txt`.
+
+## AI Platform runtime dependencies
+
+The general AI Assistant (P1) depends on the following Node-20-compatible
+runtime packages. They are pinned to the versions below to stay within the
+embedded Node 20.18.3 runtime of Electron 33 (see
+`docs/ai-platform-p0-spike.md`). No AGPL, Fair Source, or SSPL code is used.
+
+### ai (Vercel AI SDK core)
+
+- Project: <https://github.com/vercel/ai>
+- Version: `5.0.216`
+- License: Apache License 2.0
+- License copy: `LICENSES/ai-APACHE-2.0.txt`
+- `engines.node`: `>=18` (verified against the npm registry)
+
+### @ai-sdk/openai
+
+- Project: <https://github.com/vercel/ai> (`packages/openai`)
+- Version: `2.0.114` (paired with `ai@5.0.216` — both depend on
+  `@ai-sdk/provider@2.0.3` and `@ai-sdk/provider-utils@3.0.30`; later
+  `@ai-sdk/openai@3.x` requires `@ai-sdk/provider@3.x` and is incompatible
+  with `ai@5`. See `docs/ai-platform-p0-spike.md` §3 P0 correction.)
+- License: Apache License 2.0
+- License copy: `LICENSES/ai-sdk-openai-APACHE-2.0.txt`
+- `engines.node`: `>=18`
+
+Transitive runtime dependencies pulled by `ai` and `@ai-sdk/openai`
+(`@ai-sdk/provider@2.0.3`, `@ai-sdk/provider-utils@3.0.30`,
+`@ai-sdk/gateway@2.0.115`) are likewise Apache-2.0 and declare
+`engines.node: ">=18"`. They are not distributed as source; their license
+texts ship inside `node_modules` at install time.
+
+### zod
+
+- Project: <https://github.com/colinhacks/zod>
+- Version: `3.25.76`
+- License: MIT
+- License copy: `LICENSES/zod-MIT.txt`
+
+### @modelcontextprotocol/sdk (MCP TypeScript SDK)
+
+- Project: <https://github.com/modelcontextprotocol/typescript-sdk>
+- Version: `1.29.0` (P4: production-stable v1.x; do NOT upgrade to v2/main)
+- License: MIT
+- License copy: `LICENSES/modelcontextprotocol-sdk-MIT.txt`
+- Scope: main-process MCP client (stdio + loopback HTTP). The SDK's HTTP
+  server/OAuth/sampling dependencies are transitive and not imported by
+  RainTool; an esbuild metafile of the vendored raintool-mcp server (which
+  pins the same `^1.0.4` range) confirms the stdio path does not pull them in.
+
+The distributed app contains each license under `Resources/licenses/`.

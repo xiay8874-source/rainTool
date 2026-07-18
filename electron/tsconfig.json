@@ -16,6 +16,7 @@
     "./ai-drawio-types.d.ts",
     "./diagram-types.ts",
     "./diagram-repository.ts",
-    "./diagram-bridge-server.ts"
+    "./diagram-bridge-server.ts",
+    "./ai-platform/**/*.ts"
   ]
 }
