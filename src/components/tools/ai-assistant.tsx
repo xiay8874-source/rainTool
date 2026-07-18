@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAiStore } from '@/store/ai'
+import { ModelSettings } from '@/components/settings/ModelSettings'
 import type { AiModelProfile, AiProviderId } from '../../../electron/ai-platform/ai-types'
 import type { AiAttachmentMeta } from '../../../electron/ai-platform/ai-context-types'
 import { AI_CONTEXT_BUDGET_TOKENS, AI_CONTEXT_MAX_ATTACHMENTS_PER_RUN } from '../../../electron/ai-platform/ai-context-types'
@@ -31,25 +32,63 @@ const PROVIDER_LABELS: Record<AiProviderId, string> = {
 
 export default function AiAssistant(_props: ToolProps) {
   const store = useAiStore()
+  // Zustand's whole-state object changes on every set(). Depending on it in
+  // the hydration effect caused every keystroke/state update to re-run all
+  // IPC loads and rebind event listeners. In particular, createConversation
+  // could set the new conversation active and then lose it to a stale reload.
+  // Actions are stable for the lifetime of the store, so depend on those
+  // references only.
+  const loadConversations = useAiStore((s) => s.loadConversations)
+  const loadProfiles = useAiStore((s) => s.loadProfiles)
+  const loadSuppliers = useAiStore((s) => s.loadSuppliers)
+  const loadArtifacts = useAiStore((s) => s.loadArtifacts)
+  const loadMcpServers = useAiStore((s) => s.loadMcpServers)
+  const bindRunEvents = useAiStore((s) => s.bindRunEvents)
+  const bindMcpEvents = useAiStore((s) => s.bindMcpEvents)
   const [input, setInput] = useState('')
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [waitingSeconds, setWaitingSeconds] = useState(0)
   const messagesRef = useRef<HTMLDivElement>(null)
 
   // Hydrate on mount + bind the run event stream.
   useEffect(() => {
-    void store.loadConversations()
-    void store.loadProfiles()
-    void store.loadArtifacts()
-    void store.loadMcpServers()
-    const unbind = store.bindRunEvents()
-    const unbindMcp = store.bindMcpEvents()
+    void loadConversations()
+    void loadProfiles()
+    void loadSuppliers()
+    void loadArtifacts()
+    void loadMcpServers()
+    const unbind = bindRunEvents()
+    const unbindMcp = bindMcpEvents()
     return () => { unbind(); unbindMcp() }
-  }, [store])
+  }, [
+    bindMcpEvents,
+    bindRunEvents,
+    loadArtifacts,
+    loadConversations,
+    loadMcpServers,
+    loadProfiles,
+    loadSuppliers,
+  ])
 
   // Autoscroll messages to bottom on new content.
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight })
   }, [store.activeConversation?.messages.length, store.streamingText])
+
+  // Make first-token latency visible. A slow upstream should not look like a
+  // frozen composer, and after eight seconds the UI offers the faster AUTO
+  // route as an actionable alternative.
+  useEffect(() => {
+    if (store.runStatus !== 'streaming') {
+      setWaitingSeconds(0)
+      return
+    }
+    const startedAt = Date.now()
+    setWaitingSeconds(0)
+    const timer = window.setInterval(() => {
+      setWaitingSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [store.activeRunId, store.runStatus])
 
   const activeProfile = store.profiles.find((p) => p.id === store.activeProfileId) ?? null
   // Enforceable outbound-privacy gate: a run may start only when the shared
@@ -133,10 +172,10 @@ export default function AiAssistant(_props: ToolProps) {
           ))}
         </div>
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => store.setModelSettingsOpen(true)}
           className="border-t border-line px-3 py-2 text-left text-caption text-ink-secondary hover:bg-bg-hover"
         >
-          ⚙ 模型与凭据
+          ⚙ 模型设置
         </button>
         <button
           onClick={() => { void store.loadArtifacts(); store.setArtifactsOpen(true) }}
@@ -202,7 +241,12 @@ export default function AiAssistant(_props: ToolProps) {
             <MessageBubble role="assistant" text={store.streamingText} streaming />
           )}
           {store.runStatus === 'streaming' && !store.streamingText && !store.toolCalls.length && (
-            <div className="mb-3 text-caption text-ink-tertiary">模型思考中…</div>
+            <div className="mb-3 text-caption text-ink-tertiary">
+              模型思考中… {waitingSeconds}s
+              {waitingSeconds >= 8 && (
+                <span className="ml-2">首个 token 较慢；可停止后切换到 AUTO 模型。</span>
+              )}
+            </div>
           )}
           {/* P3: tool-call lifecycle cards + approval cards. These render
               during a direct-tool run (no model stream). Each card shows the
@@ -281,7 +325,7 @@ export default function AiAssistant(_props: ToolProps) {
         </div>
       </div>
 
-      {settingsOpen && <SettingsDrawer onClose={() => setSettingsOpen(false)} />}
+      {store.modelSettingsOpen && <ModelSettings onClose={() => store.setModelSettingsOpen(false)} />}
       {store.artifactsOpen && <ArtifactsDrawer onClose={() => store.setArtifactsOpen(false)} />}
       {store.mcpOpen && <McpServersDrawer onClose={() => store.setMcpOpen(false)} />}
     </div>
@@ -343,128 +387,6 @@ function PrivacyGate({ profile, onConfirm }: { profile: AiModelProfile; onConfir
       >
         我已知晓，本次会话继续
       </button>
-    </div>
-  )
-}
-
-function SettingsDrawer({ onClose }: { onClose: () => void }) {
-  const store = useAiStore()
-  const [displayName, setDisplayName] = useState('')
-  const [model, setModel] = useState('')
-  const [providerId, setProviderId] = useState<AiProviderId>('openai-compatible')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [rawKey, setRawKey] = useState('')
-  const [credentialKey, setCredentialKey] = useState('')
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
-
-  const reset = () => {
-    setDisplayName(''); setModel(''); setBaseUrl(''); setRawKey(''); setCredentialKey(''); setSaveMsg(null)
-  }
-
-  const handleCreate = async () => {
-    if (!displayName.trim() || !model.trim()) return
-    const credKey = credentialKey || await window.raintool.aiNewCredentialKey()
-    const profile = await window.raintool.aiCreateProfile({
-      providerId,
-      displayName: displayName.trim(),
-      model: model.trim(),
-      baseUrl: baseUrl.trim() || undefined,
-      credentialKey: credKey,
-      capabilities: { toolCalling: false, vision: false, jsonSchema: false, reasoning: false },
-    })
-    // Save the key if provided.
-    if (rawKey.trim()) {
-      const res = await window.raintool.aiSaveCredential(credKey, rawKey.trim())
-      if (!res.ok) {
-        setSaveMsg('保存失败：本机加密不可用，未保存凭据')
-      } else {
-        setSaveMsg(`已创建 ${profile.displayName}，凭据已加密保存`)
-      }
-    } else {
-      setSaveMsg(`已创建 ${profile.displayName}（未配置凭据）`)
-    }
-    await store.loadProfiles()
-    await store.refreshCredentialStatus(credKey)
-    reset()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" role="dialog" aria-modal="true" aria-label="模型与凭据设置">
-      <div className="w-[520px] max-h-[80vh] overflow-auto rounded-card bg-bg-surface shadow-float">
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="text-page text-ink-primary">模型与凭据</span>
-          <button onClick={onClose} className="text-caption text-ink-tertiary hover:text-ink-primary" aria-label="关闭">✕</button>
-        </div>
-
-        <div className="p-4">
-          {/* Existing profiles */}
-          <div className="mb-4">
-            <div className="mb-1 text-label text-ink-tertiary">已配置模型</div>
-            {store.profiles.length === 0 && <div className="text-caption text-ink-tertiary">暂无</div>}
-            {store.profiles.map((p) => {
-              const status = store.credentialStatuses[p.credentialKey]
-              return (
-                <div key={p.id} className="flex items-center gap-2 border-b border-line py-2 text-caption">
-                  <div className="flex-1">
-                    <div className="text-ink-primary">{p.displayName} · {p.model}</div>
-                    <div className="text-ink-tertiary">
-                      {PROVIDER_LABELS[p.providerId]}
-                      {p.baseUrl ? ` · ${p.baseUrl}` : ''}
-                      {' · 凭据：'}
-                      {status?.configured ? `已配置 ${status.maskedPreview ?? ''}` : '未配置'}
-                      {status && !status.encryptionAvailable ? '（加密不可用）' : ''}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => { await window.raintool.aiDeleteProfile(p.id); await store.loadProfiles() }}
-                    className="text-ink-tertiary hover:text-danger"
-                    aria-label={`删除 ${p.displayName}`}
-                  >
-                    删除
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* New profile form */}
-          <div className="rounded-card border border-line p-3">
-            <div className="mb-2 text-label text-ink-tertiary">新增模型配置</div>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-caption text-ink-secondary">显示名
-                <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="mt-0.5 w-full rounded-btn border border-line px-2 py-1 text-body text-ink-primary outline-none focus:border-accent" />
-              </label>
-              <label className="text-caption text-ink-secondary">Provider
-                <select value={providerId} onChange={(e) => setProviderId(e.target.value as AiProviderId)} className="mt-0.5 w-full rounded-btn border border-line px-2 py-1 text-body text-ink-primary outline-none focus:border-accent">
-                  <option value="openai-compatible">OpenAI 兼容</option>
-                  <option value="ollama">Ollama (本地)</option>
-                </select>
-              </label>
-              <label className="text-caption text-ink-secondary">模型名
-                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="gpt-4o-mini / qwen2.5:7b" className="mt-0.5 w-full rounded-btn border border-line px-2 py-1 text-body text-ink-primary outline-none focus:border-accent" />
-              </label>
-              <label className="text-caption text-ink-secondary">Base URL（可选）
-                <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="mt-0.5 w-full rounded-btn border border-line px-2 py-1 text-body text-ink-primary outline-none focus:border-accent" />
-              </label>
-              <label className="col-span-2 text-caption text-ink-secondary">API Key（加密保存，永不回传）
-                <input value={rawKey} onChange={(e) => setRawKey(e.target.value)} type="password" placeholder="sk-... / Ollama 留空" className="mt-0.5 w-full rounded-btn border border-line px-2 py-1 text-body text-ink-primary outline-none focus:border-accent" />
-              </label>
-            </div>
-            <button
-              onClick={handleCreate}
-              disabled={!displayName.trim() || !model.trim()}
-              className="mt-2 rounded-btn bg-accent px-3 py-1 text-caption text-white hover:opacity-90 disabled:opacity-40"
-            >
-              创建
-            </button>
-            {saveMsg && <div className="mt-2 text-caption text-ink-tertiary">{saveMsg}</div>}
-          </div>
-
-          <div className="mt-3 text-label text-ink-tertiary">
-            密钥通过 Electron safeStorage 加密保存，仅主进程可读。渲染层、日志、会话 JSON 均不携带密钥。
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -84,6 +84,39 @@ test('streamChat never sends a `tools` field in the request body (P1 has no tool
   assert.equal(capturedBody.stream, true)
 })
 
+test('completeChat retries through a non-streaming OpenAI-compatible completion', async () => {
+  let capturedUrl = null
+  let capturedBody = null
+  const fetchImpl = async (url, init) => {
+    capturedUrl = String(url)
+    capturedBody = JSON.parse(init?.body ?? '{}')
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'Fix commit title generation' } }],
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  const registry = makeRegistry(fetchImpl)
+  const outcome = await registry.completeChat({
+    profile: TEST_PROFILE,
+    apiKey: RAW_KEY,
+    messages: [{ id: 'm1', role: 'user', at: 0, text: 'summarize staged changes' }],
+    system: 'Return one English title.',
+    abortSignal: new AbortController().signal,
+  })
+
+  assert.equal(outcome.kind, 'completed')
+  assert.equal(outcome.finalText, 'Fix commit title generation')
+  assert.equal(capturedUrl, 'http://mock/v1/chat/completions')
+  assert.equal(capturedBody.stream, false)
+  assert.deepEqual(capturedBody.messages, [
+    { role: 'system', content: 'Return one English title.' },
+    { role: 'user', content: 'summarize staged changes' },
+  ])
+  assert.equal(capturedBody.tools, undefined)
+})
+
 test('raw API key never appears in any emitted event or finalText', async () => {
   const registry = makeRegistry(mockFetch({ deltas: ['plain reply'] }))
   const c = collector()

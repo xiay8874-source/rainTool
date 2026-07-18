@@ -166,7 +166,13 @@ test('missing profile: audit ref carries the requested profile id (never blank/s
     assert.equal(reloaded.runAuditRefs.length, 1)
     assert.equal(reloaded.runAuditRefs[0].modelProfileId, 'prof_missing')
     assert.equal(reloaded.runAuditRefs[0].status, 'failed')
-    assert.equal(reloaded.runAuditRefs[0].redactedError, '未找到模型配置')
+    // P0-1: the missing-profile message now also covers the disabled-model
+    // case (same runtime path via getEnabled). The test asserts the prefix so
+    // it's robust to the extended wording.
+    assert.ok(
+      reloaded.runAuditRefs[0].redactedError.startsWith('未找到模型配置'),
+      `expected missing-profile error, got: ${reloaded.runAuditRefs[0].redactedError}`,
+    )
   } finally {
     cleanup()
   }

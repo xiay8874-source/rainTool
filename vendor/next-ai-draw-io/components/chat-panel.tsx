@@ -882,12 +882,19 @@ export default function ChatPanel({
             // Save current session before switching
             if (messages.length > 0) {
                 const sessionData = await buildSessionData({
-                    withThumbnail: true,
+                    // A fresh thumbnail export can block the click for up to
+                    // three seconds. The latest cached thumbnail is already
+                    // persisted by autosave, so switching must not wait for it.
+                    withThumbnail: false,
                 })
                 await sessionManager.saveCurrentSession(sessionData)
             }
 
-            // Switch to selected session
+            // Switch to selected session. Mark the target before awaiting so
+            // React's session-state effect cannot race this handler and load
+            // the same diagram a second time.
+            const previouslySyncedSessionId = lastSyncedSessionIdRef.current
+            lastSyncedSessionIdRef.current = sessionId
             const sessionData = await sessionManager.switchSession(sessionId)
             if (sessionData) {
                 const hasRealDiagram = isRealDiagram(sessionData.diagramXml)
@@ -905,10 +912,20 @@ export default function ChatPanel({
                 }
                 setValidationStates({}) // Clear validation states when switching sessions
                 syncUIWithSession(sessionData)
-                router.replace(`?session=${sessionId}`, { scroll: false })
+                // Updating the query through Next's router starts a route
+                // navigation that can remount the editor immediately after
+                // `drawioRef.load()`, discarding the just-sent XML and leaving
+                // the canvas blank until the session is restored again. This
+                // URL is metadata for refresh/deep-link only, so replace it in
+                // place without navigating or remounting the Draw.io iframe.
+                const nextUrl = new URL(window.location.href)
+                nextUrl.searchParams.set("session", sessionId)
+                window.history.replaceState(window.history.state, "", nextUrl)
+            } else if (sessionId !== sessionManager.currentSessionId) {
+                lastSyncedSessionIdRef.current = previouslySyncedSessionId
             }
         },
-        [sessionManager, messages, buildSessionData, syncUIWithSession, router],
+        [sessionManager, messages, buildSessionData, syncUIWithSession],
     )
 
     // Handle session deletion from history dropdown

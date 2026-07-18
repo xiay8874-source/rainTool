@@ -25,6 +25,8 @@ import type {
   AiRunMode,
   AiSaveCredentialResult,
   AiStartRunRequest,
+  AiSupplier,
+  AiSupplierInput,
 } from '../../electron/ai-platform/ai-types'
 import type {
   AiAttachmentInput,
@@ -47,6 +49,23 @@ import type {
   AiMcpServerEvent,
   AiMcpToolMeta,
 } from '../../electron/ai-platform/ai-mcp-types'
+import type {
+  GitBranchListResult,
+  GitCommitInput,
+  GitCommitProposalRequest,
+  GitCommitProposalResult,
+  GitCommitResult,
+  GitDiffRequest,
+  GitDiffResult,
+  GitIdentity,
+  GitPushUpstreamInput,
+  GitRecentRepository,
+  GitRemoteListResult,
+  GitRepositoryHandle,
+  GitStatus,
+  GitSwitchBranchInput,
+  GitSyncResult,
+} from '../../electron/git-types'
 
 /**
  * window.raintool 的统一类型声明。
@@ -149,6 +168,18 @@ export interface RaintoolAPI {
   aiListProfiles: () => Promise<AiModelProfile[]>
   aiCreateProfile: (input: AiProfileInput) => Promise<AiModelProfile>
   aiDeleteProfile: (id: string) => Promise<boolean>
+  /** P0-1: 原子切换模型启用状态（只改 enabled，不重写其它字段） */
+  aiSetProfileEnabled: (id: string, enabled: boolean) => Promise<AiModelProfile>
+
+  // P0-1: suppliers (provider configs: base URL + protocol + credential + enable).
+  aiListSuppliers: () => Promise<AiSupplier[]>
+  aiUpsertSupplier: (input: AiSupplierInput) => Promise<AiSupplier>
+  aiDeleteSupplier: (id: string) => Promise<boolean>
+  aiSetSupplierEnabled: (id: string, enabled: boolean) => Promise<AiSupplier>
+  aiSaveSupplier: (input: { supplier: AiSupplierInput; rawKey?: string }) => Promise<
+    | { ok: true; supplier: AiSupplier; status: AiCredentialStatus }
+    | { ok: false; reason: 'encryption-unavailable' }
+  >
 
   /** 凭据状态只返回掩码；原始 key 永不回传 */
   aiCredentialStatus: (credentialKey: string) => Promise<AiCredentialStatus>
@@ -214,6 +245,54 @@ export interface RaintoolAPI {
   aiMcpDelete: (serverId: string) => Promise<boolean>
   /** 订阅 MCP 服务器状态变更事件。 */
   onMcpEvent: (cb: (event: AiMcpServerEvent) => void) => () => void
+
+  // ============ Git Workbench（Task 1+2）============
+  // 渲染进程永不传 cwd/命令/参数；只传 repositoryId（主进程在 open 时分配）。
+  // 写操作（stage/unstage）在主进程用 FRESH status 快照重新校验路径。
+  // IPC 抛错时 message 形如 `[git:CODE] 文案`，parseGitIpcError 还原为 GitError。
+  /** 原生目录选择对话框；用户取消返回 null。 */
+  gitChooseRepository: () => Promise<string | null>
+  /** 校验并打开仓库，返回带 repositoryId 的 handle。 */
+  gitOpenRepository: (absPath: string) => Promise<GitRepositoryHandle>
+  /** 最近仓库列表（仅元数据；root 可能已不存在）。 */
+  gitListRecentRepositories: () => Promise<GitRecentRepository[]>
+  /** 刷新仓库状态（summary + staged/unstaged/untracked 三组）。 */
+  gitRefreshStatus: (repositoryId: string) => Promise<GitStatus>
+  /** 取单个文件的 diff（text/binary/too_large/submodule/empty）。 */
+  gitGetDiff: (req: GitDiffRequest) => Promise<GitDiffResult>
+  /** 暂存文件；主进程执行后直接返回刷新后的 status。 */
+  gitStageFiles: (repositoryId: string, paths: string[]) => Promise<GitStatus>
+  /** 取消暂存；主进程执行后直接返回刷新后的 status。 */
+  gitUnstageFiles: (repositoryId: string, paths: string[]) => Promise<GitStatus>
+  /** 列出本地分支，供安全分支选择器使用。 */
+  gitListBranches: (repositoryId: string) => Promise<GitBranchListResult>
+  /** 切换到已存在的本地分支；主进程重新校验分支存在，Git 会拒绝覆盖本地改动。 */
+  gitSwitchBranch: (input: GitSwitchBranchInput) => Promise<GitStatus>
+  /** 读取 Git 身份（user.name/user.email；未配置返回 null）。 */
+  gitGetIdentity: (repositoryId: string) => Promise<GitIdentity>
+  /** 提交已暂存文件；主进程前置校验身份/暂存/operation，返回新 HEAD sha + 刷新 status。 */
+  gitCommit: (input: GitCommitInput) => Promise<GitCommitResult>
+  /** `git fetch --prune`；返回刷新后的 status（更新 ahead/behind）。 */
+  gitFetch: (repositoryId: string) => Promise<GitSyncResult>
+  /** `git pull --ff-only`；非快进拒绝（不产生 merge commit）。返回刷新 status。 */
+  gitPull: (repositoryId: string) => Promise<GitSyncResult>
+  /** `git push`（仅推送已配置 upstream 的当前分支）；无 upstream 时拒绝
+   *  NO_UPSTREAM，UI 引导用户明确选择远端后调用 gitPushUpstream。无 force push。 */
+  gitPush: (repositoryId: string) => Promise<GitSyncResult>
+  /** 列出已配置的远端（`git remote`），供首次推送远端选择器使用。 */
+  gitListRemotes: (repositoryId: string) => Promise<GitRemoteListResult>
+  /** 首次推送 `git push -u <remote> <branch>`；remote 经服务端校验存在于
+   *  `git remote`，branch 取当前分支。绝不静默假设 origin。返回刷新 status。 */
+  gitPushUpstream: (input: GitPushUpstreamInput) => Promise<GitSyncResult>
+  /** 丢弃已跟踪未暂存改动（`git restore --worktree`）；不触碰暂存区、不删
+   *  未跟踪文件。UI 必须先弹确认框逐文件提示不可撤销。返回刷新 status。 */
+  gitDiscardWorktreeFiles: (repositoryId: string, paths: string[]) => Promise<GitStatus>
+  /** AI 生成提交说明（仅基于已暂存内容）。渲染层只传 repositoryId +
+   *  modelProfileId；主进程经闭合 Git 服务收集 staged diff（路径排除 +
+   *  敏感内容过滤 + 32 KiB/12,000 行聚合上限），再调用现有 AI 平台的
+   *  Provider/Key 一次性生成结构化 proposal。绝不自动暂存/提交/推送——
+   *  渲染层把 subject/body 写入既有输入框供用户编辑后再手动 Commit。 */
+  gitProposeCommitMessage: (req: GitCommitProposalRequest) => Promise<GitCommitProposalResult>
 }
 
 declare global {

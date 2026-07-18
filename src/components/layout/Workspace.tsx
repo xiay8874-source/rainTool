@@ -1,11 +1,23 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType } from 'react'
 import { useAppStore } from '@/store/tabs'
 import { useUIStore } from '@/store/ui'
 import { useFavoritesStore, snapshotTab, snapshotGroup } from '@/store/favorites'
 import { TOOLS, getTool, CATEGORIES } from '../tools/catalog'
+import { ToolErrorBoundary } from '../tools/ErrorBoundary'
 import type { ToolProps } from '../tools/shared'
 
-// 懒加载工具组件
+// 懒加载工具组件。
+//
+// P0-2 修复：此前每个标签页的 <Suspense fallback="加载中…"> 没有外层
+// ErrorBoundary。一旦某个工具的动态 chunk 加载失败（打包后缺 chunk、
+// Monaco worker 解析失败、网络抖动等），lazy() 抛出的 rejection 没有边界
+// 捕获，React 会把这个标签页永久留在 Suspense fallback 上 —— 用户看到的是
+// 一直「加载中…」且无任何重试入口（Git 工作台首屏即典型受害方）。
+//
+// 现在 TabBoundary 包裹每个标签：lazy 抛出的错误被 ToolErrorBoundary 捕获，
+// 渲染「重试」按钮。点击重试时清掉该工具的缓存并 bump 一个 key，loadTool
+// 重新创建 lazy（重新发起动态 import），React 重新挂载子树。这样首屏 Monaco
+// 阻塞或 chunk 缺失都不会让标签页永久卡死，且给出可重试的可见错误。
 const toolCache = new Map<string, ComponentType<ToolProps>>()
 function loadTool(toolId: string) {
   if (toolCache.has(toolId)) return toolCache.get(toolId)!
@@ -16,6 +28,31 @@ function loadTool(toolId: string) {
   return Comp
 }
 
+/**
+ * 单个标签页的Suspense + ErrorBoundary 容器。retry 时清缓存 + bump key，
+ * 强制 loadTool 重新发起动态 import（Vite 的 import() 失败后 Promise 会
+ * 一直 rejected，不清缓存重试只是复用同一个 rejected promise）。
+ */
+function TabBoundary({ toolId, children }: { toolId: string; children: React.ReactNode }) {
+  const [retryKey, setRetryKey] = useState(0)
+  const handleRetry = useCallback(() => {
+    toolCache.delete(toolId)
+    setRetryKey((k) => k + 1)
+  }, [toolId])
+  return (
+    <ToolErrorBoundary
+      key={retryKey}
+      label="工具"
+      recoverHint="该工具加载失败，可重试；若多次失败，请重启 RainTool 后再试。"
+      onRetry={handleRetry}
+    >
+      <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>
+        {children}
+      </Suspense>
+    </ToolErrorBoundary>
+  )
+}
+
 export function Workspace() {
   const activeTabId = useAppStore((s) => s.activeTabId)
   const tabs = useAppStore((s) => s.tabs)
@@ -24,6 +61,7 @@ export function Workspace() {
   const setTabInput = useAppStore((s) => s.setTabInput)
   const setTabDiffLeft = useAppStore((s) => s.setTabDiffLeft)
   const setTabDiffRight = useAppStore((s) => s.setTabDiffRight)
+  const setTabConfig = useAppStore((s) => s.setTabConfig)
   const setTabDiagramId = useAppStore((s) => s.setTabDiagramId)
   const duplicateTab = useAppStore((s) => s.duplicateTab)
   const activeCategory = useUIStore((s) => s.activeCategory)
@@ -98,12 +136,13 @@ export function Workspace() {
               className={`absolute inset-0 ${t.toolId === 'ai-drawio' ? 'overflow-hidden' : 'overflow-auto'}`}
               style={{ display: t.id === activeTabId ? 'block' : 'none' }}
             >
-              <Suspense fallback={<div className="p-4 text-caption text-ink-tertiary">加载中…</div>}>
+              <TabBoundary toolId={t.toolId}>
                 <Comp
                   tabId={t.id}
                   input={t.state.input}
                   onInput={(v) => setTabInput(t.id, v)}
                   config={t.state.config}
+                  onConfig={(config) => setTabConfig(t.id, config)}
                   diffLeft={t.state.diffLeft}
                   diffRight={t.state.diffRight}
                   onDiffLeft={(v) => setTabDiffLeft(t.id, v)}
@@ -111,7 +150,7 @@ export function Workspace() {
                   diagramId={t.state.diagramId}
                   onDiagramId={(diagramId, title) => setTabDiagramId(t.id, diagramId, title)}
                 />
-              </Suspense>
+              </TabBoundary>
             </div>
           )
         })}

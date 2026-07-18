@@ -17,6 +17,17 @@ export type AiToolRisk = 'read' | 'propose' | 'write' | 'dangerous'
 /** Provider kind. P1 ships OpenAI-compatible (covers Ollama + OpenRouter). */
 export type AiProviderId = 'openai-compatible' | 'ollama' | 'anthropic' | 'google'
 
+/**
+ * Wire protocol a supplier speaks. Drives which endpoint + request shape the
+ * provider registry dials. `openai-chat` is the legacy default (POST
+ * `/chat/completions`); `openai-responses` uses the newer `/responses` API;
+ * `anthropic-messages` uses Anthropic's `/v1/messages` shape.
+ *
+ * P0-1: stored on AiSupplier so every model under a supplier shares one
+ * protocol (a supplier = one base URL + one credential + one protocol).
+ */
+export type AiProtocol = 'openai-chat' | 'openai-responses' | 'anthropic-messages'
+
 /** Attachment sensitivity. P1 has no attachments; reserved for P2. */
 export type AiSensitivity = 'normal' | 'redacted' | 'restricted'
 
@@ -30,6 +41,14 @@ export type AiMessageRole = 'user' | 'assistant' | 'system' | 'tool'
  * Model Profile. Stored in the Model Profile repository. The `apiKey` is
  * NEVER persisted here; it lives only in the encrypted Credential Vault keyed
  * by `credentialKey`. The renderer receives profiles without any key.
+ *
+ * P0-1: a profile is now a single MODEL entry under a supplier. The supplier
+ * owns the base URL + protocol + credential + enable state; the profile owns
+ * the model id + capabilities + its own per-model enable flag. A profile is
+ * usable only when BOTH `enabled` is true AND its supplier is enabled (see
+ * `getEnabled` in the profile repository + the supplier repository's
+ * `isEnabled`). Legacy profiles without a `supplierId` are migrated into a
+ * default supplier on load (see ai-supplier-repository).
  */
 export interface AiModelProfile {
   id: string
@@ -40,6 +59,25 @@ export interface AiModelProfile {
   baseUrl?: string
   /** Credential vault key; never sent to renderer. */
   credentialKey: string
+  /**
+   * P0-1: supplier this model belongs to. Optional for backward compat —
+   * legacy profiles are assigned a supplier during migration. New profiles
+   * always carry a supplierId.
+   */
+  supplierId?: string
+  /**
+   * P0-1: per-model enable flag. Disabled models are excluded from the AI
+   * assistant dropdown + Git AI (see listEnabled/getEnabled). Defaults to
+   * true for legacy profiles. A model is usable only when this is true AND
+   * its supplier is enabled.
+   */
+  enabled?: boolean
+  /**
+   * P0-1: wire protocol. When present, overrides the supplier's protocol for
+   * this model (rarely needed — normally the supplier's protocol is used).
+   * The effective protocol is resolved by the provider registry.
+   */
+  protocol?: AiProtocol
   capabilities: {
     vision: boolean
     toolCalling: boolean
@@ -49,6 +87,43 @@ export interface AiModelProfile {
   maxInputTokens?: number
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * P0-1: Supplier — a provider configuration grouping one or more models.
+ * Owns the base URL, wire protocol, encrypted credential key, and an
+ * enable/disable flag. Models (AiModelProfile) reference a supplier by id.
+ *
+ * TokenHub is seeded as the default supplier on first run (baseUrl
+ * `http://127.0.0.1:15722/v1`, protocol `openai-chat`, models GLM-5.2 /
+ * AUTO / Logos / Multimodal-Chat). The renderer groups the settings page by
+ * supplier; disabling a supplier greys out all its models and excludes them
+ * from AI assistant + Git AI.
+ */
+export interface AiSupplier {
+  id: string
+  displayName: string
+  providerId: AiProviderId
+  protocol: AiProtocol
+  /** Base URL for the supplier's API. Required for openai-* / anthropic. */
+  baseUrl?: string
+  /** Credential vault key; never sent to renderer. */
+  credentialKey: string
+  /** Disabled suppliers' models are excluded from AI assistant + Git AI. */
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** P0-1: supplier DTO crossing the IPC boundary (no raw key ever). */
+export interface AiSupplierInput {
+  id?: string
+  displayName: string
+  providerId: AiProviderId
+  protocol: AiProtocol
+  baseUrl?: string
+  credentialKey: string
+  enabled?: boolean
 }
 
 /**
@@ -184,6 +259,10 @@ export type AiSaveCredentialResult =
  * Input for creating/updating a model profile. Lives in ai-types because it
  * crosses the IPC boundary (renderer → main). The repository re-exports it.
  * `credentialKey` references the encrypted vault; no raw key here.
+ *
+ * P0-1: `supplierId` links the model to a supplier (whose base URL + protocol
+ * + credential are used at runtime). `enabled` defaults to true; `protocol`
+ * is optional (inherits the supplier's protocol when absent).
  */
 export interface AiProfileInput {
   id?: string
@@ -192,17 +271,45 @@ export interface AiProfileInput {
   model: string
   baseUrl?: string
   credentialKey: string
+  /** P0-1: supplier this model belongs to. */
+  supplierId?: string
+  /** P0-1: per-model enable flag (defaults true). */
+  enabled?: boolean
+  /** P0-1: optional per-model protocol override (normally inherits supplier). */
+  protocol?: AiProtocol
   capabilities?: Partial<AiModelProfile['capabilities']>
   maxInputTokens?: number
 }
 
 /** Constants. */
 export const AI_CONVERSATION_SCHEMA_VERSION = 1
-export const AI_PROFILE_SCHEMA_VERSION = 1
+/**
+ * P0-1: profile schema bumped to 2 to carry supplierId/enabled/protocol.
+ * The repository reads v1 + v2 and normalizes missing fields (legacy v1
+ * profiles get enabled=true, supplierId assigned during supplier migration).
+ */
+export const AI_PROFILE_SCHEMA_VERSION = 2
+/** P0-1: supplier schema version. */
+export const AI_SUPPLIER_SCHEMA_VERSION = 1
 /** P1 default guardrails (plan §4.2). */
 export const AI_MAX_RUN_STEPS = 8
 export const AI_MAX_RUN_MS = 10 * 60 * 1000
 export const AI_PER_CALL_TIMEOUT_MS = 120_000
+
+/**
+ * P0-1: TokenHub default supplier. Seeded on first run (no suppliers on
+ * disk). The user can edit/disable/delete it like any other supplier.
+ */
+export const TOKENHUB_DEFAULT_BASE_URL = 'http://127.0.0.1:15722/v1'
+export const TOKENHUB_DEFAULT_SUPPLIER_ID = 'supplier_tokenhub_default'
+export const TOKENHUB_DEFAULT_MODELS: ReadonlyArray<{ model: string; displayName: string }> = [
+  // AUTO is the interactive default: TokenHub can route it to a low-latency
+  // model, while users can still explicitly pick GLM-5.2 for heavier work.
+  { model: 'AUTO', displayName: 'AUTO' },
+  { model: 'GLM-5.2', displayName: 'GLM-5.2' },
+  { model: 'Logos', displayName: 'Logos' },
+  { model: 'Multimodal-Chat', displayName: 'Multimodal-Chat' },
+]
 
 /**
  * Run modes the P1 main-process boundary actually implements. The `AiRunMode`

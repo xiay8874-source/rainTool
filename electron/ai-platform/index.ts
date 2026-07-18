@@ -12,6 +12,7 @@ import path from 'node:path'
 import { AiConversationRepository } from './ai-conversation-repository.js'
 import { AiCredentialVault } from './ai-credential-vault.js'
 import { AiModelProfileRepository } from './ai-model-profile-repository.js'
+import { AiSupplierRepository } from './ai-supplier-repository.js'
 import { AiProviderRegistry } from './ai-provider-registry.js'
 import { AiRuntime } from './ai-runtime.js'
 import { registerAiIpc, type AiIpcDeps } from './ai-ipc.js'
@@ -27,6 +28,7 @@ import type { DiagramChangedEvent } from '../diagram-types.js'
 import { AiMcpConfigRepository } from './ai-mcp-config-repository.js'
 import { AiMcpManager } from './ai-mcp-manager.js'
 import type { AiCancelReason, AiRunEvent } from './ai-types.js'
+import { TOKENHUB_DEFAULT_MODELS, TOKENHUB_DEFAULT_SUPPLIER_ID } from './ai-types.js'
 
 export interface AiPlatform {
   runtime: AiRuntime
@@ -69,7 +71,23 @@ export function initAiPlatform(options: {
 
   const dataDir = app.getPath('userData')
   const credentialVault = new AiCredentialVault(dataDir)
+  const supplierRepository = new AiSupplierRepository(dataDir)
   const profileRepository = new AiModelProfileRepository(dataDir)
+  // P0-1: link the profile repo to the supplier repo so profile reads merge
+  // the supplier's connection config (protocol/baseUrl/credentialKey) and
+  // respect the supplier's enable flag.
+  profileRepository.setSupplierRepository({
+    get: (id) => {
+      const s = supplierRepository.get(id)
+      return s ? { enabled: s.enabled, protocol: s.protocol, baseUrl: s.baseUrl, credentialKey: s.credentialKey } : null
+    },
+  })
+  // P0-1 migration: assign a supplierId to every legacy profile that lacks
+  // one, deduping into the TokenHub default supplier where the URL matches.
+  // Seed the TokenHub default models if the TokenHub supplier has no models
+  // yet AND no profiles exist at all (first run).
+  migrateLegacyProfilesIntoSuppliers(profileRepository, supplierRepository)
+  seedTokenHubDefaultModels(profileRepository, supplierRepository)
   const conversationRepository = new AiConversationRepository(dataDir)
   const providerRegistry = new AiProviderRegistry()
   const contextVault = new AiContextVault(dataDir)
@@ -129,6 +147,7 @@ export function initAiPlatform(options: {
     assertTrustedRenderer: options.assertTrustedRenderer,
     conversationRepository,
     profileRepository,
+    supplierRepository,
     credentialVault,
     runtime,
     contextVault,
@@ -173,4 +192,52 @@ function resolveBundledMcpLauncher(): { command: string; args: string[] } | null
 
 export function getAiPlatform(): AiPlatform | null {
   return platform
+}
+
+/**
+ * P0-1 migration: assign a supplierId to every legacy profile that lacks one.
+ * Idempotent + safe-dedup: profiles pointing at the same (providerId,
+ * baseUrl, credentialKey) collapse into ONE supplier; TokenHub-shaped
+ * profiles fold into the seeded TokenHub supplier. Run once at bootstrap.
+ */
+function migrateLegacyProfilesIntoSuppliers(
+  profileRepository: AiModelProfileRepository,
+  supplierRepository: AiSupplierRepository,
+): void {
+  for (const profile of profileRepository.list()) {
+    if (profile.supplierId) continue
+    const supplierId = supplierRepository.resolveSupplierForLegacyProfile({
+      providerId: profile.providerId,
+      baseUrl: profile.baseUrl,
+      credentialKey: profile.credentialKey,
+    })
+    profileRepository.assignSupplier(profile.id, supplierId)
+  }
+}
+
+/**
+ * P0-1: on first run (no profiles at all), seed the TokenHub default models
+ * (GLM-5.2 / AUTO / Logos / Multimodal-Chat) under the TokenHub supplier so
+ * the user has working models out of the box. Idempotent: if any profiles
+ * exist, do nothing (the user may have deleted the defaults — don't recreate).
+ */
+function seedTokenHubDefaultModels(
+  profileRepository: AiModelProfileRepository,
+  supplierRepository: AiSupplierRepository,
+): void {
+  if (profileRepository.list().length > 0) return
+  const tokenhub = supplierRepository.get(TOKENHUB_DEFAULT_SUPPLIER_ID)
+  if (!tokenhub) return
+  for (const m of TOKENHUB_DEFAULT_MODELS) {
+    profileRepository.upsert({
+      providerId: tokenhub.providerId,
+      displayName: m.displayName,
+      model: m.model,
+      baseUrl: tokenhub.baseUrl,
+      credentialKey: tokenhub.credentialKey,
+      supplierId: tokenhub.id,
+      enabled: true,
+      capabilities: { vision: false, toolCalling: false, jsonSchema: false, reasoning: false },
+    })
+  }
 }

@@ -3,25 +3,46 @@ import type {
   DiagramDocument,
   DiagramExportRequest,
   DiagramUpdateResult,
-  LegacyDiagramInput,
 } from '../../../electron/diagram-types'
 import type { ToolProps } from './shared'
+import {
+  BRIDGE_PROTOCOL,
+  classifyBridgeMessage,
+  type BridgeMessage,
+} from './ai-drawio-bridge'
+
+// Bounded lifecycle timeouts (P0 fix). The previous implementation could
+// remain stuck on the "正在启动 AI Draw.io…" splash forever if the document
+// load hung (e.g. IPC glitch, missing diagram id). Each phase now has an
+// explicit bounded timeout that transitions to a retryable error.
+//
+//   - START_TIMEOUT_MS: grace over the main process's 30s startAiDrawioServer
+//     timeout. If the IPC has not returned by 35s, the renderer gives up and
+//     surfaces a retryable error (defense-in-depth; the main process should
+//     have returned an error result already).
+//   - DOCUMENT_LOAD_TIMEOUT_MS: the getDiagram/createDiagram IPC must return
+//     within 15s. A hang here previously left the splash visible even though
+//     the local server was already serving HTTP 200 — the user saw "正在启动
+//     AI Draw.io…" indefinitely. Now it flips to a retryable error.
+//   - FRAME_READY_TIMEOUT_MS: after the iframe loads, the embedded Draw.io
+//     bridge must post `raintool:diagram-ready` within 20s. If it doesn't, the
+//     canvas is not usable and the user sees a retryable error (the iframe is
+//     reloaded on retry).
+const START_TIMEOUT_MS = 35_000
+const DOCUMENT_LOAD_TIMEOUT_MS = 15_000
+const FRAME_READY_TIMEOUT_MS = 20_000
 
 type Phase =
   | { kind: 'starting' }
+  | { kind: 'loading-document'; url: string }
   | { kind: 'ready'; url: string }
-  | { kind: 'error'; message: string; details?: string }
-
-type BridgeMessage = {
-  protocol?: string
-  type?: string
-  diagramId?: string
-  revision?: number
-  xml?: string
-  requestId?: string
-  data?: string
-  items?: LegacyDiagramInput[]
-}
+  | {
+      kind: 'error'
+      message: string
+      details?: string
+      /** Which retry path the button should trigger. */
+      retry: 'start' | 'document' | 'frame'
+    }
 
 export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
@@ -46,6 +67,13 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
   const pendingExportsRef = useRef<Map<string, DiagramExportRequest>>(new Map())
   const onDiagramIdRef = useRef(onDiagramId)
   const persistXmlRef = useRef<(xml: string) => Promise<void>>(async () => {})
+  // P0 fix: track whether the legacy migration has already run so a reloaded
+  // iframe does not re-trigger it (idempotent guard, also enforced by the
+  // classifier via legacyMigrationDone in the context).
+  const legacyMigrationDoneRef = useRef<boolean>(
+    typeof localStorage !== 'undefined' &&
+      localStorage.getItem('raintool:legacy-diagrams-migrated-v1') === 'true',
+  )
 
   useEffect(() => { onDiagramIdRef.current = onDiagramId }, [onDiagramId])
 
@@ -53,7 +81,7 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     const frameWindow = frameRef.current?.contentWindow
     const origin = frameOriginRef.current
     if (!frameWindow || !origin) return
-    frameWindow.postMessage({ protocol: 'raintool-diagram-v1', ...message }, origin)
+    frameWindow.postMessage({ protocol: BRIDGE_PROTOCOL, ...message }, origin)
   }, [])
 
   const loadDocumentIntoFrame = useCallback((next: DiagramDocument) => {
@@ -122,10 +150,28 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
       if (!mounted.current) return
       if (result.status === 'ready') {
         frameOriginRef.current = new URL(result.url).origin
-        setPhase({ kind: 'ready', url: result.url })
+        // P0 修复：文档加载 effect 在挂载时就会发起（phase='starting' 时不等
+        // start() 返回）。如果文档已经在 start() 等待期间加载完成并写入
+        // documentRef，此处必须直接进入 ready —— 否则 phase 会停在
+        // loading-document（文档 effect 的 .then 不会再跑，因为依赖未变），
+        // 直到 15s 超时才报错，表现就是「一直启动中/加载中」。文档 effect
+        // 保证 documentRef.current 与当前 diagramId 一致，所以这里只要
+        // documentRef 有值即可直接就绪，iframe 渲染后由 FRAME_READY_TIMEOUT
+        // 兜底桥接就绪。
+        const current = documentRef.current
+        if (current) {
+          setPhase({ kind: 'ready', url: result.url })
+        } else {
+          setPhase({ kind: 'loading-document', url: result.url })
+        }
       } else {
         frameOriginRef.current = null
-        setPhase({ kind: 'error', message: result.message, details: result.details })
+        setPhase({
+          kind: 'error',
+          message: result.message,
+          details: result.details,
+          retry: 'start',
+        })
       }
     } catch (error) {
       if (!mounted.current) return
@@ -133,6 +179,7 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
         kind: 'error',
         message: '无法请求启动 AI Draw.io 服务。',
         details: error instanceof Error ? error.message : String(error),
+        retry: 'start',
       })
     }
   }, [])
@@ -151,6 +198,24 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     }
   }, [start])
 
+  // P0 fix: bounded timeout on the `starting` phase. If startAiDrawio has not
+  // returned by START_TIMEOUT_MS (35s — grace over the main process's 30s
+  // internal timeout), surface a retryable error instead of leaving the splash
+  // visible forever.
+  useEffect(() => {
+    if (phase.kind !== 'starting') return
+    const timer = window.setTimeout(() => {
+      if (!mounted.current) return
+      setPhase({
+        kind: 'error',
+        message: 'AI Draw.io 服务启动超时。',
+        details: `渲染层在 ${START_TIMEOUT_MS / 1000}s 内未收到主进程响应。主进程可能仍在尝试启动本地服务，可重试或检查 127.0.0.1:13370 是否被占用。`,
+        retry: 'start',
+      })
+    }, START_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [phase.kind])
+
   useEffect(() => {
     const current = documentRef.current
     if (current && (!diagramId || current.id === diagramId)) return
@@ -167,10 +232,21 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     void documentRequestRef.current.promise.then((next) => {
       if (cancelled || !mounted.current) return
       if (!next) {
-        setPhase({ kind: 'error', message: '图纸不存在或已被删除。' })
+        setPhase({
+          kind: 'error',
+          message: '图纸不存在或已被删除。',
+          retry: 'document',
+        })
         return
       }
       loadDocumentIntoFrame(next)
+      // Document loaded — if the server is already ready (loading-document
+      // phase), transition to `ready` so the iframe renders. If the server is
+      // still starting, the loading-document effect below will handle the
+      // transition once start() resolves.
+      setPhase((prev) =>
+        prev.kind === 'loading-document' ? { kind: 'ready', url: prev.url } : prev,
+      )
       if (frameReadyRef.current) window.raintool.setDiagramEditorReady(next.id, true)
     }).catch((error: unknown) => {
       if (cancelled || !mounted.current) return
@@ -178,14 +254,42 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
         kind: 'error',
         message: '无法打开图纸。',
         details: error instanceof Error ? error.message : String(error),
+        retry: 'document',
       })
     })
     return () => { cancelled = true }
   }, [diagramId, loadDocumentIntoFrame])
 
+  // P0 fix: bounded timeout on document loading. If the document IPC has not
+  // returned within DOCUMENT_LOAD_TIMEOUT_MS while the server is ready, flip
+  // to a retryable error. This is the regression for the "stuck on 正在启动
+  // AI Draw.io…" symptom where the server was up (HTTP 200) but the document
+  // load hung and the splash stayed forever.
+  useEffect(() => {
+    if (phase.kind !== 'loading-document') return
+    const timer = window.setTimeout(() => {
+      if (!mounted.current) return
+      // Only fire if we're STILL in loading-document (document didn't arrive).
+      setPhase((prev) => {
+        if (prev.kind !== 'loading-document') return prev
+        return {
+          kind: 'error',
+          message: '图纸加载超时。',
+          details: `本地服务已就绪，但图纸在 ${DOCUMENT_LOAD_TIMEOUT_MS / 1000}s 内未加载完成。可重试；若持续失败，请检查图纸库是否可访问。`,
+          retry: 'document',
+        }
+      })
+    }, DOCUMENT_LOAD_TIMEOUT_MS)
+    return () => window.clearTimeout(timer)
+  }, [phase.kind])
+
+  // Bounded timeout on the iframe→bridge handoff. The embedded Draw.io page
+  // must post `raintool:diagram-ready` within FRAME_READY_TIMEOUT_MS of the
+  // iframe loading. If it doesn't, the canvas is not usable and the user sees
+  // a retryable error (the iframe is reloaded on retry via frameKey bump).
   useEffect(() => {
     if (phase.kind !== 'ready' || frameState !== 'loading') return
-    const timer = window.setTimeout(() => setFrameState('error'), 20_000)
+    const timer = window.setTimeout(() => setFrameState('error'), FRAME_READY_TIMEOUT_MS)
     return () => window.clearTimeout(timer)
   }, [phase.kind, frameState, frameKey])
 
@@ -194,52 +298,61 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     const expectedOrigin = new URL(phase.url).origin
     const handleMessage = (event: MessageEvent<BridgeMessage>) => {
       if (event.source !== frameRef.current?.contentWindow || event.origin !== expectedOrigin) return
-      const message = event.data
-      if (message?.protocol !== 'raintool-diagram-v1') return
-      if (message.type === 'raintool:diagram-ready') {
-        frameReadyRef.current = true
-        setFrameState('ready')
-        const current = documentRef.current
-        if (current) {
-          window.raintool.setDiagramEditorReady(current.id, true)
-          loadDocumentIntoFrame(current)
+      // Build the classifier context from current refs.
+      const ctx = {
+        currentDocumentId: documentRef.current?.id ?? null,
+        pendingExportRequestIds: new Set(pendingExportsRef.current.keys()),
+        legacyMigrationDone: legacyMigrationDoneRef.current,
+      }
+      const action = classifyBridgeMessage(event.data, ctx)
+      switch (action.kind) {
+        case 'ready': {
+          frameReadyRef.current = true
+          setFrameState('ready')
+          const current = documentRef.current
+          if (current) {
+            window.raintool.setDiagramEditorReady(current.id, true)
+            loadDocumentIntoFrame(current)
+          }
+          for (const request of pendingExportsRef.current.values()) {
+            postToFrame({
+              type: 'raintool:diagram-export',
+              requestId: request.requestId,
+              format: request.format,
+            })
+          }
+          pendingExportsRef.current.clear()
+          if (!legacyMigrationDoneRef.current) {
+            postToFrame({ type: 'raintool:legacy-request' })
+          }
+          return
         }
-        for (const request of pendingExportsRef.current.values()) {
-          postToFrame({
-            type: 'raintool:diagram-export',
-            requestId: request.requestId,
-            format: request.format,
+        case 'autosave': {
+          queueSave(action.xml)
+          return
+        }
+        case 'export-result': {
+          window.raintool.completeDiagramExport({
+            requestId: action.requestId,
+            data: action.data,
+            error: action.error,
           })
+          return
         }
-        pendingExportsRef.current.clear()
-        if (localStorage.getItem('raintool:legacy-diagrams-migrated-v1') !== 'true') {
-          postToFrame({ type: 'raintool:legacy-request' })
+        case 'legacy-response': {
+          void window.raintool.migrateLegacyDiagrams(action.items).then(() => {
+            legacyMigrationDoneRef.current = true
+            try {
+              localStorage.setItem('raintool:legacy-diagrams-migrated-v1', 'true')
+            } catch {
+              // localStorage may be unavailable in some sandboxed contexts;
+              // the ref guard above keeps us idempotent either way.
+            }
+          })
+          return
         }
-        return
-      }
-      if (
-        message.type === 'raintool:diagram-autosave' &&
-        message.diagramId === documentRef.current?.id &&
-        typeof message.xml === 'string'
-      ) {
-        queueSave(message.xml)
-        return
-      }
-      if (
-        message.type === 'raintool:diagram-export-result' &&
-        typeof message.requestId === 'string'
-      ) {
-        window.raintool.completeDiagramExport({
-          requestId: message.requestId,
-          data: message.data,
-          error: message.data ? undefined : 'Draw.io 未返回导出数据',
-        })
-        return
-      }
-      if (message.type === 'raintool:legacy-response' && Array.isArray(message.items)) {
-        void window.raintool.migrateLegacyDiagrams(message.items).then(() => {
-          localStorage.setItem('raintool:legacy-diagrams-migrated-v1', 'true')
-        })
+        case 'ignore':
+          return
       }
     }
     window.addEventListener('message', handleMessage)
@@ -264,7 +377,7 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     })
     const offDeleted = window.raintool.onDiagramDeleted(({ id }) => {
       if (id === documentRef.current?.id) {
-        setPhase({ kind: 'error', message: '当前图纸已被删除。' })
+        setPhase({ kind: 'error', message: '当前图纸已被删除。', retry: 'document' })
       }
     })
     const offExport = window.raintool.onDiagramExportRequested((request) => {
@@ -294,16 +407,62 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
     setFrameKey((value) => value + 1)
   }
 
+  /** Retry dispatcher driven by the error phase's `retry` discriminator. */
+  const handleRetry = () => {
+    if (phase.kind !== 'error') return
+    switch (phase.retry) {
+      case 'start':
+        void start()
+        return
+      case 'document': {
+        // Re-trigger the document-load effect by clearing the cached request
+        // and bumping a ref. The simplest robust path: re-run start() which
+        // re-enters loading-document, and the document effect will pick up
+        // the same diagramId (its cache is keyed by diagramId).
+        documentRequestRef.current = null
+        void start()
+        return
+      }
+      case 'frame':
+        reloadFrame()
+        return
+    }
+  }
+
   if (phase.kind === 'error') {
+    const title =
+      phase.retry === 'start'
+        ? 'AI Draw.io 启动失败'
+        : phase.retry === 'document'
+          ? '图纸加载失败'
+          : '绘图工作区加载失败'
     return (
-      <StatusCard title="AI Draw.io 启动失败" description={phase.message} details={phase.details}>
-        <ActionButton onClick={() => void start()}>重试启动</ActionButton>
+      <StatusCard title={title} description={phase.message} details={phase.details}>
+        <ActionButton onClick={handleRetry}>
+          {phase.retry === 'frame' ? '重新加载工作区' : '重试'}
+        </ActionButton>
       </StatusCard>
     )
   }
 
-  if (phase.kind === 'starting' || !document) {
-    return <StatusCard title="正在启动 AI Draw.io…" description="首次启动可能需要几秒钟。" />
+  // Accurate splash messaging (P0 fix):
+  //   - `starting`           → server is starting (or IPC hasn't returned yet).
+  //   - `loading-document`   → server is ready, diagram is loading. Previously
+  //                            this state was conflated with "starting", which
+  //                            is why users reported "stuck on starting" even
+  //                            though the server was already serving HTTP 200.
+  //   - `ready` && !document → shouldn't happen (ready implies document
+  //                            loaded), but guard anyway with a clear message.
+  if (phase.kind === 'starting') {
+    return <StatusCard title="正在启动 AI Draw.io 服务…" description="首次启动可能需要几秒钟。" />
+  }
+  if (phase.kind === 'loading-document' || !document) {
+    return (
+      <StatusCard
+        title={phase.kind === 'loading-document' ? '正在加载图纸…' : '正在准备 AI Draw.io…'}
+        description="本地服务已就绪，正在加载图纸。"
+      />
+    )
   }
 
   const frameUrl = new URL(phase.url)
@@ -331,7 +490,7 @@ export default function AiDrawio({ diagramId, onDiagramId }: ToolProps) {
       )}
       {frameState === 'error' && (
         <div className="absolute inset-0 flex items-center justify-center bg-bg-app">
-          <StatusCard title="绘图工作区加载失败" description="本地服务仍在运行，可以重新加载页面。">
+          <StatusCard title="绘图工作区加载失败" description="本地服务仍在运行，但 Draw.io 工作区未在限定时间内就绪。可重新加载页面。">
             <ActionButton onClick={reloadFrame}>重新加载</ActionButton>
           </StatusCard>
         </div>

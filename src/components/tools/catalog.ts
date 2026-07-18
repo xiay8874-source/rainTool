@@ -3,6 +3,7 @@
 
 import type { ComponentType } from 'react'
 import type { ToolProps } from './shared'
+import GitWorkbench from './git-workbench'
 
 export type ToolCategoryId =
   | 'json'
@@ -13,6 +14,7 @@ export type ToolCategoryId =
   | 'text'
   | 'network'
   | 'ai'
+  | 'git'
 
 export interface ToolCategory {
   id: ToolCategoryId
@@ -36,6 +38,7 @@ export const CATEGORIES: ToolCategory[] = [
   { id: 'text', name: '文本处理', icon: 'text' },
   { id: 'network', name: '网络工具', icon: 'network' },
   { id: 'ai', name: 'AI 工具', icon: 'ai' },
+  { id: 'git', name: 'Git', icon: 'git' },
 ]
 
 export const TOOLS: ToolDef[] = [
@@ -56,6 +59,15 @@ export const TOOLS: ToolDef[] = [
     categoryId: 'ai',
     name: 'AI 助手',
     loader: () => import('@/components/tools/ai-assistant'),
+  },
+  {
+    id: 'git-workbench',
+    categoryId: 'git',
+    name: 'Git 工作台',
+    // The Git shell is small and its Monaco diff viewer remains lazy-loaded.
+    // Loading the shell itself as a file:// chunk can leave Electron's
+    // Suspense boundary pending forever, so keep this entry in the main bundle.
+    loader: () => Promise.resolve({ default: GitWorkbench }),
   },
   // JSON
   {

@@ -23,9 +23,12 @@ import type {
   AiModelProfile,
   AiRunEvent,
   AiSaveCredentialResult,
+  AiSupplier,
+  AiSupplierInput,
 } from './ai-types.js'
 import type { AiConversationRepository } from './ai-conversation-repository.js'
 import type { AiModelProfileRepository } from './ai-model-profile-repository.js'
+import type { AiSupplierRepository } from './ai-supplier-repository.js'
 import type { AiProfileInput } from './ai-types.js'
 import type { AiCredentialVault } from './ai-credential-vault.js'
 import { newCredentialKey } from './ai-credential-vault.js'
@@ -58,6 +61,8 @@ export interface AiIpcDeps {
   assertTrustedRenderer: (event: IpcMainInvokeEvent | Electron.IpcMainEvent) => void
   conversationRepository: AiConversationRepository
   profileRepository: AiModelProfileRepository
+  /** P0-1: supplier repository (CRUD + enable + migration). */
+  supplierRepository: AiSupplierRepository
   credentialVault: AiCredentialVault
   runtime: AiRuntime
   /** P2: context vault for attachment payloads. */
@@ -130,6 +135,18 @@ export function registerAiIpc(deps: AiIpcDeps): void {
     return deps.profileRepository.delete(id)
   })
 
+  // P0-1: atomic per-model enable toggle. Touches ONLY `enabled` + `updatedAt`
+  // — never rewrites model/displayName/baseUrl/credentialKey/supplierId, so a
+  // toggle can't clobber supplier-owned fields or create a duplicate (the old
+  // path re-upserted the whole profile, which was both fragile and a dedup
+  // risk). Returns the updated profile; throws on unknown id.
+  ipcMain.handle('ai:profile:set-enabled', (event, id: string, enabled: boolean) => {
+    deps.assertTrustedRenderer(event)
+    const result = deps.profileRepository.setEnabled(id, enabled)
+    if (!result) throw new Error('未找到模型配置')
+    return result satisfies AiModelProfile
+  })
+
   // ---- Credentials (raw key never returned) ----
   ipcMain.handle('ai:credential:status', (event, credentialKey: string) => {
     deps.assertTrustedRenderer(event)
@@ -158,6 +175,146 @@ export function registerAiIpc(deps: AiIpcDeps): void {
   ipcMain.handle('ai:credential:new-key', (event) => {
     deps.assertTrustedRenderer(event)
     return newCredentialKey()
+  })
+
+  // ---- P0-1: Suppliers (provider configs: base URL + protocol + credential + enable) ----
+  // A supplier groups one or more model profiles. The renderer creates/edits/
+  // deletes suppliers and toggles enable. Saving a supplier WITH a raw key is
+  // transactional (ai:supplier:save): the credential is persisted FIRST; only
+  // if that succeeds is the supplier upserted. If the credential save fails
+  // (encryption unavailable) the supplier is NOT written, so no orphan
+  // supplier referencing a missing credential can exist. A supplier whose
+  // credential the user cleared is allowed (loopback TokenHub needs no key).
+  ipcMain.handle('ai:supplier:list', (event) => {
+    deps.assertTrustedRenderer(event)
+    return deps.supplierRepository.list() satisfies AiSupplier[]
+  })
+
+  const supplierInputSchema = z.object({
+    id: z.string().min(1).max(128).optional(),
+    displayName: z.string().min(1).max(120),
+    providerId: z.enum(['openai-compatible', 'ollama', 'anthropic', 'google']),
+    protocol: z.enum(['openai-chat', 'openai-responses', 'anthropic-messages']),
+    baseUrl: z.string().max(500).optional(),
+    credentialKey: z.string().min(1).max(128),
+    enabled: z.boolean().optional(),
+  }).strict()
+  ipcMain.handle('ai:supplier:upsert', (event, input: unknown) => {
+    deps.assertTrustedRenderer(event)
+    const parsed = supplierInputSchema.safeParse(input)
+    if (!parsed.success) {
+      throw new Error(`供应商参数校验失败：${parsed.error.issues[0]?.message ?? 'invalid'}`)
+    }
+    return deps.supplierRepository.upsert(parsed.data as AiSupplierInput) satisfies AiSupplier
+  })
+
+  ipcMain.handle('ai:supplier:delete', (event, id: string) => {
+    deps.assertTrustedRenderer(event)
+    const supplier = deps.supplierRepository.get(id)
+    if (!supplier) return false
+    // The settings confirmation explicitly says the supplier AND all of its
+    // models are deleted. Remove models first so no orphan profile can remain
+    // usable through the legacy "missing supplier" fallback.
+    deps.profileRepository.deleteBySupplier(id)
+    return deps.supplierRepository.delete(id)
+  })
+
+  ipcMain.handle('ai:supplier:set-enabled', (event, id: string, enabled: boolean) => {
+    deps.assertTrustedRenderer(event)
+    const result = deps.supplierRepository.setEnabled(id, enabled)
+    if (!result) throw new Error('未找到供应商')
+    return result satisfies AiSupplier
+  })
+
+  // Relaxed schema for ai:supplier:save: credentialKey is OPTIONAL here (the
+  // handler allocates one when absent — new suppliers). The strict
+  // `supplierInputSchema` (used by ai:supplier:upsert) still requires it, so a
+  // direct upsert caller must pre-allocate. Without this relaxation, creating
+  // a new supplier from the UI fails Zod validation (the renderer passes an
+  // empty credentialKey for suppliers that don't yet have one).
+  const supplierSaveInputSchema = z.object({
+    id: z.string().min(1).max(128).optional(),
+    displayName: z.string().min(1).max(120),
+    providerId: z.enum(['openai-compatible', 'ollama', 'anthropic', 'google']),
+    protocol: z.enum(['openai-chat', 'openai-responses', 'anthropic-messages']),
+    baseUrl: z.string().max(500).optional(),
+    credentialKey: z.string().max(128).optional(),
+    enabled: z.boolean().optional(),
+  }).strict()
+
+  /**
+   * Transactional supplier + credential save. Order:
+   *   1. Resolve the CANONICAL supplier id + credentialKey the upsert WOULD
+   *      produce (fold-aware) BEFORE any vault write. This is the key fix:
+   *      the vault write must land on the FINAL credentialKey, not a temp key
+   *      that a subsequent fold would orphan.
+   *   2. For a NEW supplier with no credentialKey, allocate one.
+   *   3. If rawKey non-empty: persist the credential to the CANONICAL key
+   *      FIRST. If encryption is unavailable, return { ok: false, reason:
+   *      'encryption-unavailable' } WITHOUT writing the supplier — no orphan
+   *      supplier referencing a missing credential.
+   *   4. Upsert the supplier with the canonical id + credentialKey. The
+   *      supplier repo's fold branch keeps the target's credentialKey (which
+   *      equals the canonical key), so no post-upsert fixup is needed.
+   *   5. Return the PERSISTED canonical supplier + masked credential status.
+   *
+   * Dedup safety: the supplier repository folds a TokenHub-URL supplier into
+   * the seeded TokenHub id, so a repeated "add TokenHub" cannot create a
+   * duplicate. Because the vault is written to the canonical key BEFORE
+   * upsert, a fold never orphans a credential at a temp key.
+   */
+  ipcMain.handle('ai:supplier:save', async (event, input: {
+    supplier: AiSupplierInput
+    rawKey?: string
+  }) => {
+    deps.assertTrustedRenderer(event)
+    const parsed = z.object({
+      supplier: supplierSaveInputSchema,
+      rawKey: z.string().max(4096).optional(),
+    }).strict().safeParse(input)
+    if (!parsed.success) {
+      throw new Error(`供应商保存参数校验失败：${parsed.error.issues[0]?.message ?? 'invalid'}`)
+    }
+    const { supplier: supplierInput, rawKey } = parsed.data
+    const trimmedKey = rawKey?.trim()
+    // Step 1: resolve canonical supplier id + credentialKey BEFORE any vault
+    // write. For a fold (e.g. new supplier pointing at the TokenHub default
+    // URL), this returns the TARGET's credentialKey — the vault write lands
+    // there directly, no temp key to orphan.
+    const canonical = deps.supplierRepository.resolveCanonical({
+      id: supplierInput.id,
+      baseUrl: supplierInput.baseUrl,
+      credentialKey: supplierInput.credentialKey,
+    })
+    let credentialKey = canonical.credentialKey
+    // Step 2: allocate a credentialKey for new suppliers that don't have one.
+    if (!credentialKey) {
+      credentialKey = newCredentialKey()
+    }
+    // Step 3: persist credential first (to the CANONICAL key). A failed save
+    // (encryption unavailable) aborts BEFORE the supplier is written — no
+    // orphan supplier referencing a missing credential.
+    if (trimmedKey) {
+      const credResult = deps.credentialVault.set(credentialKey, trimmedKey)
+      if (!credResult.ok) {
+        return { ok: false, reason: 'encryption-unavailable' as const }
+      }
+    }
+    // Step 4: upsert with the canonical id + credentialKey. The supplier
+    // repo's fold branch keeps the target's credentialKey (which equals
+    // `credentialKey` here), so the persisted supplier references the same
+    // key the vault was written to — no orphan, no mismatch.
+    const supplier = deps.supplierRepository.upsert({
+      ...supplierInput,
+      id: canonical.id,
+      credentialKey,
+    })
+    // Step 5: return the persisted canonical supplier + masked status.
+    return {
+      ok: true as const,
+      supplier,
+      status: deps.credentialVault.status(supplier.credentialKey),
+    }
   })
 
   // ---- Runs ----

@@ -1,13 +1,20 @@
-// Regression tests for P1 capability enforcement at the main-process boundary.
+// Regression tests for capability enforcement at the main-process boundary.
 //
-// The UI only supports openai-compatible and ollama providers, and the runtime
-// only implements the `chat` mode. These tests prove the boundary rejects
-// unsupported provider ids and non-chat modes with explicit safe errors, and
-// that legacy persisted profiles with an unsupported provider do not load.
+// P0-1 widened the provider set to openai-compatible + ollama + anthropic
+// (Anthropic served via the `anthropic-messages` protocol — no SDK dep, raw
+// fetch SSE). `google` remains reserved/rejected. The runtime only
+// implements the `chat` mode. These tests prove the boundary rejects
+// unsupported provider ids and non-chat modes with explicit safe errors,
+// and that legacy persisted profiles with an unsupported provider do not
+// load.
 //
 // Covers:
-//   - Profile repo upsert rejects anthropic/google with an explicit error.
-//   - Legacy profiles.json with an unsupported providerId is filtered on load.
+//   - P1_SUPPORTED_PROVIDERS contains openai-compatible + ollama + anthropic
+//     (NOT google).
+//   - Profile repo upsert accepts anthropic; rejects google with an explicit
+//     error.
+//   - Legacy profiles.json with an unsupported providerId (google) is filtered
+//     on load; anthropic legacy profiles ARE loaded (now supported).
 //   - Runtime.start rejects non-chat modes (agent/assistant) with a deferred
 //     `failed` terminal carrying an explicit redactedError.
 //   - The IPC mode-check logic (P1_SUPPORTED_RUN_MODES) rejects non-chat modes
@@ -58,27 +65,28 @@ function terminalTypes(events) {
 // Provider capability enforcement at the profile repository
 // ---------------------------------------------------------------------------
 
-test('P1_SUPPORTED_PROVIDERS contains only openai-compatible and ollama', () => {
+test('P1_SUPPORTED_PROVIDERS contains openai-compatible, ollama, and anthropic (not google)', () => {
   assert.ok(P1_SUPPORTED_PROVIDERS.has('openai-compatible'))
   assert.ok(P1_SUPPORTED_PROVIDERS.has('ollama'))
-  assert.equal(P1_SUPPORTED_PROVIDERS.has('anthropic'), false)
+  // P0-1: anthropic is now supported via the anthropic-messages protocol
+  // (raw fetch SSE — no @ai-sdk/anthropic dependency).
+  assert.ok(P1_SUPPORTED_PROVIDERS.has('anthropic'))
+  // google remains reserved/rejected.
   assert.equal(P1_SUPPORTED_PROVIDERS.has('google'), false)
 })
 
-test('profile repo upsert rejects anthropic with an explicit safe error', () => {
+test('profile repo upsert accepts anthropic (P0-1 widening)', () => {
   const { dir, cleanup } = withTempDir()
   try {
     const repo = new AiModelProfileRepository(dir)
-    assert.throws(
-      () => repo.upsert({
-        providerId: 'anthropic',
-        displayName: 'Claude',
-        model: 'claude-3',
-        credentialKey: 'cred_a',
-      }),
-      (err) => err instanceof Error && /P1 暂不支持该 provider.*anthropic/.test(err.message),
-      'anthropic should be rejected with an explicit P1 error',
-    )
+    const profile = repo.upsert({
+      providerId: 'anthropic',
+      displayName: 'Claude',
+      model: 'claude-3',
+      credentialKey: 'cred_a',
+    })
+    assert.equal(profile.providerId, 'anthropic')
+    assert.ok(profile.id, 'anthropic profile was persisted with an id')
   } finally {
     cleanup()
   }
@@ -95,14 +103,15 @@ test('profile repo upsert rejects google with an explicit safe error', () => {
         model: 'gemini-1.5',
         credentialKey: 'cred_a',
       }),
-      (err) => err instanceof Error && /P1 暂不支持该 provider.*google/.test(err.message),
+      (err) => err instanceof Error && /不支持该 provider.*google/.test(err.message),
+      'google should be rejected with an explicit error listing it as unsupported',
     )
   } finally {
     cleanup()
   }
 })
 
-test('profile repo upsert accepts openai-compatible and ollama', () => {
+test('profile repo upsert accepts openai-compatible, ollama, and anthropic', () => {
   const { dir, cleanup } = withTempDir()
   try {
     const repo = new AiModelProfileRepository(dir)
@@ -120,7 +129,14 @@ test('profile repo upsert accepts openai-compatible and ollama', () => {
       credentialKey: 'cred_b',
     })
     assert.equal(b.providerId, 'ollama')
-    assert.equal(repo.list().length, 2)
+    const c = repo.upsert({
+      providerId: 'anthropic',
+      displayName: 'Claude',
+      model: 'claude-3',
+      credentialKey: 'cred_c',
+    })
+    assert.equal(c.providerId, 'anthropic')
+    assert.equal(repo.list().length, 3)
   } finally {
     cleanup()
   }
@@ -130,6 +146,8 @@ test('legacy profiles.json with an unsupported providerId is filtered on load (n
   const { dir, cleanup } = withTempDir()
   try {
     // Hand-write a profiles.json mixing supported + unsupported providers.
+    // P0-1: anthropic is now SUPPORTED, so prof_anthropic loads. google is
+    // the only truly-unsupported provider — it must be filtered out.
     const aiDir = path.join(dir, 'ai')
     mkdirSync(aiDir, { recursive: true })
     writeFileSync(path.join(aiDir, 'profiles.json'), JSON.stringify({
@@ -143,10 +161,12 @@ test('legacy profiles.json with an unsupported providerId is filtered on load (n
 
     const repo = new AiModelProfileRepository(dir)
     const list = repo.list()
-    assert.equal(list.length, 1, 'legacy unsupported profiles should be filtered out')
-    assert.equal(list[0].id, 'prof_ok')
-    assert.equal(repo.get('prof_anthropic'), null)
-    assert.equal(repo.get('prof_google'), null)
+    // prof_ok + prof_anthropic load (both supported); prof_google is filtered.
+    assert.equal(list.length, 2, 'only the unsupported google profile is filtered out')
+    const ids = list.map((p) => p.id).sort()
+    assert.deepEqual(ids, ['prof_anthropic', 'prof_ok'])
+    assert.equal(repo.get('prof_google'), null, 'google profile filtered on load')
+    assert.ok(repo.get('prof_anthropic'), 'anthropic profile loaded (now supported)')
   } finally {
     cleanup()
   }

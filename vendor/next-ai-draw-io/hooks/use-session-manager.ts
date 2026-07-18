@@ -177,11 +177,6 @@ export function useSessionManager(
         async (id: string): Promise<SessionData | null> => {
             if (id === currentSessionId) return null
 
-            // Save current session first if it has messages
-            if (currentSession && currentSession.messages.length > 0) {
-                await saveSession(currentSession)
-            }
-
             // Load the target session
             const session = await getSession(id)
             if (!session) {
@@ -201,7 +196,7 @@ export function useSessionManager(
                 diagramHistory: session.diagramHistory,
             }
         },
-        [currentSessionId, currentSession],
+        [currentSessionId],
     )
 
     // Delete a session

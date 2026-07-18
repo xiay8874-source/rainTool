@@ -79,6 +79,16 @@ export function CategoryIcon({ id, size = 18, className }: IconProps & { id: Too
           <path d="M9 12h.01M15 12h.01M9.5 15h5" />
         </svg>
       )
+    case 'git':
+      return (
+        <svg {...base(size)} className={className}>
+          <circle cx="6" cy="6" r="2.5" />
+          <circle cx="6" cy="18" r="2.5" />
+          <circle cx="17" cy="12" r="2.5" />
+          <path d="M6 8.5v7" />
+          <path d="M6 12c0-2.5 4-3 7-3.5" />
+        </svg>
+      )
   }
 }
 

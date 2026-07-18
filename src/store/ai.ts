@@ -13,6 +13,7 @@ import type {
   AiCredentialStatus,
   AiModelProfile,
   AiRunEvent,
+  AiSupplier,
 } from '../../electron/ai-platform/ai-types'
 import type {
   AiAttachmentMeta,
@@ -33,6 +34,24 @@ import type {
 import { eligibilityReason, shouldResetConfirmation } from '../../electron/ai-platform/ai-eligibility'
 
 type RunStatus = 'idle' | 'streaming' | 'cancelling' | 'error'
+
+const ACTIVE_PROFILE_STORAGE_KEY = 'raintool.ai.active-profile-id'
+
+function readPersistedActiveProfileId(): string | null {
+  try {
+    return window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistActiveProfileId(id: string): void {
+  try {
+    window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, id)
+  } catch {
+    // A disabled storage backend must not prevent model selection.
+  }
+}
 
 /** A renderer-side view of a tool call's lifecycle (one card per toolCallId). */
 interface ToolCallEntry {
@@ -105,9 +124,24 @@ interface AiState {
   /** P4: whether the MCP Servers drawer is open. */
   mcpOpen: boolean
 
+  /** P0-1: suppliers (provider configs). The settings page edits these. */
+  suppliers: AiSupplier[]
+  /** P0-1: whether the full Model Settings page is open (replaces the old drawer). */
+  modelSettingsOpen: boolean
+
   // hydration
   loadConversations: () => Promise<void>
   loadProfiles: () => Promise<void>
+  /** P0-1: load suppliers (provider configs) from main. */
+  loadSuppliers: () => Promise<void>
+  /** P0-1: transactional supplier + credential save (no orphan on failure). */
+  saveSupplier: (input: { supplier: import('../../electron/ai-platform/ai-types').AiSupplierInput; rawKey?: string }) => Promise<{ ok: boolean; reason?: string }>
+  /** P0-1: toggle a supplier's enable flag (disabled supplier → its models excluded). */
+  setSupplierEnabled: (id: string, enabled: boolean) => Promise<void>
+  /** P0-1: delete a supplier. */
+  deleteSupplier: (id: string) => Promise<void>
+  /** P0-1: open/close the Model Settings page. */
+  setModelSettingsOpen: (open: boolean) => void
   selectConversation: (id: string | null) => Promise<void>
   createConversation: (modelProfileId: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
@@ -177,6 +211,8 @@ export const useAiStore = create<AiState>((set, get) => ({
   mcpServers: [],
   mcpTools: {},
   mcpOpen: false,
+  suppliers: [],
+  modelSettingsOpen: false,
 
   loadConversations: async () => {
     const conversations = await window.raintool.aiListConversations()
@@ -189,36 +225,95 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   loadProfiles: async () => {
+    // P0-1: load ONLY enabled profiles for the assistant dropdown. The full
+    // list (including disabled) is shown in the Model Settings page, which
+    // calls aiListProfiles directly. Disabled models/suppliers are excluded
+    // here so the assistant can never pick one for a new run.
     const profiles = await window.raintool.aiListProfiles()
+    const enabledProfiles = profiles.filter((p) => p.enabled !== false)
     // Capture the active profile as it was BEFORE the refresh, so an upsert
     // that changed the active profile's effective URL (same id, different
     // baseUrl) is detected and privacyConfirmed is reset — a confirmation to
     // one remote URL must not survive a redirect to a different remote URL.
-    const prevActiveId = get().activeProfileId
+    const prevActiveId = get().activeProfileId ?? readPersistedActiveProfileId()
     const prevActive = prevActiveId
       ? get().profiles.find((p) => p.id === prevActiveId) ?? null
       : null
-    const activeProfileId = prevActiveId
-      ?? profiles[0]?.id
-      ?? null
+    // If the previously-active profile got disabled, drop it so the dropdown
+    // doesn't show a disabled model as selected.
+    const activeProfileId = (prevActiveId && enabledProfiles.some((p) => p.id === prevActiveId))
+      ? prevActiveId
+      // TokenHub's AUTO route is substantially faster for interactive use
+      // than pinning a large reasoning model, so prefer it only when the user
+      // has not already made a persisted selection.
+      : enabledProfiles.find((p) => p.model.toUpperCase() === 'AUTO')?.id
+        ?? enabledProfiles[0]?.id
+        ?? null
     const nextActive = activeProfileId
-      ? profiles.find((p) => p.id === activeProfileId) ?? null
+      ? enabledProfiles.find((p) => p.id === activeProfileId) ?? null
       : null
     const reset = shouldResetConfirmation(prevActive, nextActive)
     set({
-      profiles,
+      profiles: enabledProfiles,
       activeProfileId,
       ...(reset ? { privacyConfirmed: false } : {}),
     })
-    // Hydrate credential statuses for all profiles (masked only).
+    if (activeProfileId) persistActiveProfileId(activeProfileId)
+    // Hydrate credential statuses for all enabled profiles (masked only).
     const statuses: Record<string, AiCredentialStatus> = { ...get().credentialStatuses }
-    await Promise.all(profiles.map(async (p) => {
+    await Promise.all(enabledProfiles.map(async (p) => {
       if (!statuses[p.credentialKey]) {
         statuses[p.credentialKey] = await window.raintool.aiCredentialStatus(p.credentialKey)
       }
     }))
     set({ credentialStatuses: statuses })
   },
+
+  // P0-1: suppliers (provider configs).
+  loadSuppliers: async () => {
+    const suppliers = await window.raintool.aiListSuppliers()
+    set({ suppliers })
+  },
+
+  saveSupplier: async (input) => {
+    const result = await window.raintool.aiSaveSupplier(input)
+    if (!result.ok) {
+      set({ lastError: '本机加密不可用，凭据未保存，供应商未创建' })
+      return { ok: false, reason: 'encryption-unavailable' }
+    }
+    // Refresh suppliers + profiles so the UI reflects the new/edited supplier
+    // and its models. Also refresh the masked credential status.
+    await get().loadSuppliers()
+    await get().loadProfiles()
+    await get().refreshCredentialStatus(result.supplier.credentialKey)
+    return { ok: true }
+  },
+
+  setSupplierEnabled: async (id, enabled) => {
+    try {
+      await window.raintool.aiSetSupplierEnabled(id, enabled)
+      await get().loadSuppliers()
+      // Profiles depend on supplier enable state — reload so the dropdown
+      // drops the newly-disabled supplier's models.
+      await get().loadProfiles()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '切换供应商启用状态失败'
+      set({ lastError: msg })
+    }
+  },
+
+  deleteSupplier: async (id) => {
+    try {
+      await window.raintool.aiDeleteSupplier(id)
+      await get().loadSuppliers()
+      await get().loadProfiles()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '删除供应商失败'
+      set({ lastError: msg })
+    }
+  },
+
+  setModelSettingsOpen: (open) => set({ modelSettingsOpen: open }),
 
   selectConversation: async (id) => {
     if (!id) { set({ activeConversation: null }); return }
@@ -227,9 +322,14 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 
   createConversation: async (modelProfileId) => {
-    const conversation = await window.raintool.aiCreateConversation({ modelProfileId })
-    set({ activeConversation: conversation })
-    await get().loadConversations()
+    set({ lastError: null })
+    try {
+      const conversation = await window.raintool.aiCreateConversation({ modelProfileId })
+      set({ activeConversation: conversation })
+      await get().loadConversations()
+    } catch (err) {
+      set({ lastError: err instanceof Error ? err.message : '新建会话失败' })
+    }
   },
 
   deleteConversation: async (id) => {
@@ -249,6 +349,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     // (neither needs it); same effective URL keeps it (even across different
     // profile ids pointed at the same endpoint).
     const reset = shouldResetConfirmation(prev, next)
+    persistActiveProfileId(id)
     set({ activeProfileId: id, ...(reset ? { privacyConfirmed: false } : {}) })
   },
 

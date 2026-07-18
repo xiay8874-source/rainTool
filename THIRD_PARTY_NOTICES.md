@@ -101,4 +101,28 @@ texts ship inside `node_modules` at install time.
   RainTool; an esbuild metafile of the vendored raintool-mcp server (which
   pins the same `^1.0.4` range) confirms the stdio path does not pull them in.
 
+## Git Workbench runtime dependencies
+
+The Git Workbench (Task 2) renders unified diffs in an embedded Monaco
+DiffEditor. Monaco loads from the bundled package (offline; no CDN).
+
+### monaco-editor
+
+- Project: <https://github.com/microsoft/monaco-editor>
+- Version: `0.52.2`
+- License: MIT
+- License copy: `LICENSES/monaco-editor-MIT.txt`
+- Scope: the DiffEditor widget used by the Git Workbench. Loaded in the
+  renderer via the local bundle (see `loader.config` in
+  `src/components/tools/git-workbench.tsx`); no network requests.
+
+### @monaco-editor/react
+
+- Project: <https://github.com/suren-atoyan/monaco-react>
+- Version: `4.7.0`
+- License: MIT
+- License copy: `LICENSES/monaco-editor-react-MIT.txt`
+- Scope: React wrapper that mounts the Monaco DiffEditor. Its `loader` is
+  configured to resolve `monaco-editor` from the local bundle.
+
 The distributed app contains each license under `Resources/licenses/`.

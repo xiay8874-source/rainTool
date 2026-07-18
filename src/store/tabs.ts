@@ -188,6 +188,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     closeTab: (id) => {
+      const closingToolId = get().tabs.find((tab) => tab.id === id)?.toolId
       set((s) => {
         const tabs = s.tabs.filter((t) => t.id !== id)
         const wasActive = s.activeTabId === id
@@ -204,6 +205,9 @@ export const useAppStore = create<AppState>((set, get) => {
       // 若关的是活动标签,补录新的活动标签到历史
       const s = get()
       if (s.activeTabId !== id) pushHistory(s.activeTabId)
+      if (closingToolId === 'git-workbench') {
+        void import('./git-workbench').then(({ deleteGitWorkbenchStore }) => deleteGitWorkbenchStore(id))
+      }
     },
 
     renameTab: (id, title) =>
@@ -234,6 +238,10 @@ export const useAppStore = create<AppState>((set, get) => {
         return newId
       }
       const newId = uid()
+      if (src.toolId === 'git-workbench') {
+        const { cloneGitWorkbenchStore } = await import('./git-workbench')
+        cloneGitWorkbenchStore(id, newId)
+      }
       const copy: Tab = {
         ...src,
         id: newId,

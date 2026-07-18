@@ -53,12 +53,14 @@ import {
 } from './ai-tool-types.js'
 import { buildJsonApplyApproval } from './ai-json-tools.js'
 import { buildDiagramApproval } from './ai-diagram-tools.js'
+import { parseCommitProposal, type CommitProposal } from './ai-commit-proposer.js'
+import { isOutboundLocal } from './ai-eligibility.js'
 
 export interface AiRuntimeDeps {
   providerRegistry: AiProviderRegistry
   conversationRepository: AiConversationRepository
   credentialVault: AiCredentialVault
-  profileRepository: { get: (id: string) => AiModelProfile | null }
+  profileRepository: { get: (id: string) => AiModelProfile | null; getEnabled?: (id: string) => AiModelProfile | null }
   /** P2: context vault for attachment payloads. Optional for P1 back-compat. */
   contextVault?: AiContextVault
   /** P3: tool registry (allowlisted + Zod-validated). */
@@ -112,6 +114,19 @@ interface ActiveRun {
     contentHash: string
     revision: string
   }>
+}
+
+/**
+ * Error thrown by `proposeCommitMessage` (Task 4 one-shot). Carries a structured
+ * `code` so the main IPC layer can wrap it into a `[git:CODE]` IPC error for the
+ * renderer's `parseGitIpcError`. The `code` mirrors `GitErrorCode` values
+ * (AI_UNAVAILABLE / AI_PROVIDER_FAILED / AI_SCHEMA_INVALID / COMMAND_TIMEOUT).
+ */
+export class ProposeError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+    this.name = 'ProposeError'
+  }
 }
 
 /**
@@ -250,6 +265,103 @@ export class AiRuntime {
   }
 
   /**
+   * One-shot structured commit-message proposal (Task 4). Resolves the profile +
+   * key exactly like `runLoop` does, calls `providerRegistry.streamChat` directly
+   * with the given system + user prompt, collects `finalText`, and validates it
+   * via `parseCommitProposal` (strict zod). Records a sanitized audit entry.
+   *
+   * This bypasses conversation persistence — no `AiConversation`, no
+   * `runAuditRef`, no `ai:run:event` stream. It is a synchronous request/reply
+   * from the Git Workbench's "生成提交说明" button. The caller (main IPC) wraps
+   * any thrown error into a `[git:CODE]` IPC error.
+   *
+   * Throws on: profile missing, credential missing (non-ollama), provider
+   * failure, abort/timeout, or schema-invalid output (AI_SCHEMA_INVALID).
+   */
+  async proposeCommitMessage(input: {
+    modelProfileId: string
+    system: string
+    userPrompt: string
+    abortSignal?: AbortSignal
+  }): Promise<CommitProposal> {
+    // P0-1: use getEnabled so a disabled model (or a model whose supplier was
+    // disabled) is rejected with AI_UNAVAILABLE — never silently used. Fall
+    // back to `get` for test fakes that don't implement getEnabled (the real
+    // repository always does).
+    const resolveProfile = this.deps.profileRepository.getEnabled ?? this.deps.profileRepository.get
+    const profile = resolveProfile.call(this.deps.profileRepository, input.modelProfileId)
+    if (!profile) {
+      throw new ProposeError('AI_UNAVAILABLE', '未找到模型配置，或该模型/供应商已禁用，请在 AI 设置中启用一个 Provider')
+    }
+    const apiKey = this.deps.credentialVault.get(profile.credentialKey) ?? ''
+    // Ollama + loopback profiles (local TokenHub / LM Studio) need no key.
+    if (!apiKey && profile.providerId !== 'ollama' && !isOutboundLocal(profile)) {
+      throw new ProposeError('AI_UNAVAILABLE', '未配置凭据或凭据不可用')
+    }
+
+    // Single-user-message "conversation" for streamChat. The AiMessage shape
+    // requires id/at; use stable values (this call is not persisted).
+    const messages: AiMessage[] = [
+      { id: `propose-${Date.now()}`, role: 'user', at: Date.now(), text: input.userPrompt },
+    ]
+    const runId = `propose-${randomUUID()}`
+    const sequence = { value: 0 }
+    // No-op emitter: this one-shot does not stream to the renderer; we collect
+    // finalText from the outcome. The provider still receives text-deltas but
+    // we discard them (the outcome carries the full text).
+    const noopEmit = () => {}
+
+    let outcome: AiStreamOutcome
+    try {
+      const completeChat = this.deps.providerRegistry.completeChat
+      // Commit-title generation has no renderer streaming surface. Prefer the
+      // short non-streaming completion path so local reasoning gateways do not
+      // spend tens of seconds producing an SSE stream that we only collect at
+      // the end anyway. Test fakes and older registries fall back to streamChat.
+      outcome = typeof completeChat === 'function'
+        ? await completeChat.call(this.deps.providerRegistry, {
+          profile,
+          apiKey,
+          messages,
+          system: input.system,
+          abortSignal: input.abortSignal ?? new AbortController().signal,
+        })
+        : await this.deps.providerRegistry.streamChat({
+          profile,
+          apiKey,
+          messages,
+          system: input.system,
+          abortSignal: input.abortSignal ?? new AbortController().signal,
+          emit: noopEmit,
+          runId,
+          sequence,
+        })
+    } catch {
+      throw new ProposeError('AI_PROVIDER_FAILED', '模型调用失败')
+    }
+
+    if (outcome.kind === 'failed') {
+      throw new ProposeError('AI_PROVIDER_FAILED', outcome.redactedError || '模型调用失败')
+    }
+    if (outcome.kind === 'aborted') {
+      throw new ProposeError('COMMAND_TIMEOUT', '生成已取消或超时')
+    }
+
+    // outcome.kind === 'completed' — validate the title output strictly.
+    const parsed = parseCommitProposal(outcome.finalText)
+    if (!parsed.ok) {
+      throw new ProposeError('AI_SCHEMA_INVALID', `模型输出不符合规范：${parsed.reason}`)
+    }
+
+    // Audit (sanitized metadata only — no prompt text, no raw output).
+    this.deps.auditLog?.record(runId, 'run-completed', {
+      summary: `commit-message proposal (${profile.providerId}/${profile.model})`,
+    })
+
+    return parsed.proposal
+  }
+
+  /**
    * Emit a terminal event exactly once per run. After the first terminal,
    * subsequent calls are no-ops. Returns true if this call committed the
    * terminal, false if a terminal was already committed.
@@ -327,13 +439,19 @@ export class AiRuntime {
     // produces a DEFERRED `failed` terminal (after the IPC start response has
     // returned and the renderer has recorded activeRunId). The run was already
     // announced via `started`; never reject silently.
-    const profile = this.deps.profileRepository.get(request.modelProfileId)
+    //
+    // P0-1: use getEnabled so a disabled model (or a model whose supplier was
+    // disabled) resolves to null → `failed` terminal with a clear message,
+    // rather than silently running against a disabled model. Fall back to `get`
+    // for test fakes that don't implement getEnabled (the real repository does).
+    const resolveProfile = this.deps.profileRepository.getEnabled ?? this.deps.profileRepository.get
+    const profile = resolveProfile.call(this.deps.profileRepository, request.modelProfileId)
     if (!profile) {
       // run.profileId stays as the requested id so the audit is never blank.
-      this.finishRun(run, 'failed', '未找到模型配置')
+      this.finishRun(run, 'failed', '未找到模型配置，或该模型/供应商已禁用')
       this.commitTerminal(run, () => this.deps.emit({
         runId: run.runId, sequence: sequence.value++, type: 'failed', at: Date.now(),
-        payload: { redactedError: '未找到模型配置', kind: 'internal' },
+        payload: { redactedError: '未找到模型配置，或该模型/供应商已禁用', kind: 'internal' },
       }))
       return
     }
@@ -341,10 +459,12 @@ export class AiRuntime {
     run.profileId = profile.id
 
     // Resolve the raw key (main-process only). If absent, fail with a generic
-    // message — never reveal whether a key exists for this profile.
+    // message — never reveal whether a key exists for this profile. Ollama
+    // never needs a key (legacy behavior); any loopback profile (local
+    // TokenHub / local LM Studio / local Ollama) is also exempt — it never
+    // leaves this machine.
     const apiKey = this.deps.credentialVault.get(profile.credentialKey) ?? ''
-    if (!apiKey && profile.providerId !== 'ollama') {
-      // Ollama needs no key; everything else does.
+    if (!apiKey && profile.providerId !== 'ollama' && !isOutboundLocal(profile)) {
       this.finishRun(run, 'failed', '凭据未配置')
       this.commitTerminal(run, () => this.deps.emit({
         runId: run.runId, sequence: sequence.value++, type: 'failed', at: Date.now(),

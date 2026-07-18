@@ -18,12 +18,13 @@
     "verify:ai": "node scripts/verify-next-standalone.mjs",
     "verify:mcp": "node scripts/verify-raintool-mcp.mjs",
     "test:diagrams": "npm run build:electron && npm run build:mcp && node --test tests/diagram-repository.test.mjs tests/diagram-mcp-integration.test.mjs",
+    "test:git": "npm run build:electron && node --test tests/git-runner.test.mjs tests/git-workbench-store.test.mjs tests/git-commit-proposer.test.mjs",
     "verify:package:ai": "node scripts/verify-packaged-ai.mjs",
     "preview": "vite preview",
     "start": "npm run start:prod",
     "start:prod": "npm run build:ai && npm run build:mcp && npm run build && npm run build:electron && electron .",
     "dist": "npm run build:ai && npm run build:mcp && npm run build && npm run build:electron && electron-builder --mac && npm run verify:package:ai",
-    "test:ai": "npm run build:electron && node --test tests/ai-credential-vault.test.mjs tests/ai-conversation-repository.test.mjs tests/ai-provider-registry.test.mjs tests/ai-runtime.test.mjs tests/ai-dep-engine.test.mjs tests/ai-capability-enforcement.test.mjs tests/ai-eligibility.test.mjs tests/ai-sensitivity-budget.test.mjs tests/ai-context-vault-artifacts.test.mjs tests/ai-context-runtime-ipc.test.mjs tests/ai-tools-approval.test.mjs tests/ai-diagram-tools.test.mjs tests/ai-mcp-manager.test.mjs"
+    "test:ai": "npm run build:electron && node --test tests/ai-credential-vault.test.mjs tests/ai-conversation-repository.test.mjs tests/ai-provider-registry.test.mjs tests/ai-runtime.test.mjs tests/ai-dep-engine.test.mjs tests/ai-capability-enforcement.test.mjs tests/ai-eligibility.test.mjs tests/ai-sensitivity-budget.test.mjs tests/ai-context-vault-artifacts.test.mjs tests/ai-context-runtime-ipc.test.mjs tests/ai-tools-approval.test.mjs tests/ai-diagram-tools.test.mjs tests/ai-mcp-manager.test.mjs tests/ai-supplier-repository.test.mjs tests/ai-model-disabled-gating.test.mjs tests/ai-supplier-credential-atomic.test.mjs tests/ai-model-dedup.test.mjs"
   },
   "build": {
     "appId": "com.xiay8874.raintool",
@@ -100,13 +101,15 @@
     }
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zustand": "^4.5.5",
     "@ai-sdk/openai": "2.0.114",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@monaco-editor/react": "^4.7.0",
     "ai": "5.0.216",
-    "zod": "3.25.76"
+    "monaco-editor": "^0.52.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "3.25.76",
+    "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -115,6 +118,7 @@
     "autoprefixer": "^10.4.20",
     "electron": "^33.0.0",
     "electron-builder": "^26.15.3",
+    "esbuild": "0.21.5",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

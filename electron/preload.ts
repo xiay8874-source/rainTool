@@ -10,6 +10,8 @@ import type {
   AiRunMode,
   AiSaveCredentialResult,
   AiStartRunRequest,
+  AiSupplier,
+  AiSupplierInput,
 } from './ai-platform/ai-types.js'
 import type {
   AiAttachmentInput,
@@ -49,6 +51,23 @@ import type {
   LegacyDiagramInput,
   LegacyDiagramMigrationResult,
 } from './diagram-types.js'
+import type {
+  GitBranchListResult,
+  GitCommitInput,
+  GitCommitProposalRequest,
+  GitCommitProposalResult,
+  GitCommitResult,
+  GitDiffRequest,
+  GitDiffResult,
+  GitIdentity,
+  GitPushUpstreamInput,
+  GitRecentRepository,
+  GitRemoteListResult,
+  GitRepositoryHandle,
+  GitStatus,
+  GitSwitchBranchInput,
+  GitSyncResult,
+} from './git-types.js'
 
 // 暴露给渲染进程的持久化 API(收藏夹等)+ 自动更新 API + 鼠标导航
 const api = {
@@ -154,6 +173,28 @@ const api = {
     ipcRenderer.invoke('ai:profile:create', input),
   aiDeleteProfile: (id: string): Promise<boolean> =>
     ipcRenderer.invoke('ai:profile:delete', id),
+  // P0-1: atomic enable toggle — touches only `enabled`, never re-upserts the
+  // whole profile (avoids clobbering supplier-owned fields + duplicate risk).
+  aiSetProfileEnabled: (id: string, enabled: boolean): Promise<AiModelProfile> =>
+    ipcRenderer.invoke('ai:profile:set-enabled', id, enabled),
+
+  // P0-1: suppliers (provider configs: base URL + protocol + credential + enable).
+  // The settings page groups models by supplier; disabling a supplier excludes
+  // all its models from AI assistant + Git AI. aiSupplierSave is transactional:
+  // credential persisted first, supplier upserted only on success (no orphan).
+  aiListSuppliers: (): Promise<AiSupplier[]> =>
+    ipcRenderer.invoke('ai:supplier:list'),
+  aiUpsertSupplier: (input: AiSupplierInput): Promise<AiSupplier> =>
+    ipcRenderer.invoke('ai:supplier:upsert', input),
+  aiDeleteSupplier: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke('ai:supplier:delete', id),
+  aiSetSupplierEnabled: (id: string, enabled: boolean): Promise<AiSupplier> =>
+    ipcRenderer.invoke('ai:supplier:set-enabled', id, enabled),
+  aiSaveSupplier: (input: { supplier: AiSupplierInput; rawKey?: string }): Promise<
+    | { ok: true; supplier: AiSupplier; status: AiCredentialStatus }
+    | { ok: false; reason: 'encryption-unavailable' }
+  > =>
+    ipcRenderer.invoke('ai:supplier:save', input),
 
   // 凭据：只返回掩码状态；保存时把原始 key 发给主进程，主进程加密后丢弃明文。
   aiCredentialStatus: (credentialKey: string): Promise<AiCredentialStatus> =>
@@ -256,6 +297,65 @@ const api = {
     ipcRenderer.on('ai:mcp:event', listener)
     return () => ipcRenderer.removeListener('ai:mcp:event', listener)
   },
+
+  // ============ Git Workbench（Task 1+2）：窄 API，渲染进程永不传 cwd/命令 ============
+  // choose 返回用户选择的目录绝对路径（原生对话框），由渲染进程再调 open 校验。
+  // open 返回 repositoryId（主进程分配的 opaque token），后续所有操作只传 id。
+  gitChooseRepository: (): Promise<string | null> =>
+    ipcRenderer.invoke('git:choose-repository'),
+  gitOpenRepository: (absPath: string): Promise<GitRepositoryHandle> =>
+    ipcRenderer.invoke('git:open-repository', absPath),
+  gitListRecentRepositories: (): Promise<GitRecentRepository[]> =>
+    ipcRenderer.invoke('git:list-recent-repositories'),
+  gitRefreshStatus: (repositoryId: string): Promise<GitStatus> =>
+    ipcRenderer.invoke('git:refresh-status', repositoryId),
+  gitGetDiff: (req: GitDiffRequest): Promise<GitDiffResult> =>
+    ipcRenderer.invoke('git:get-diff', req),
+  // stage/unstage 执行后主进程直接返回刷新后的 status，避免渲染层再发一次请求。
+  gitStageFiles: (repositoryId: string, paths: string[]): Promise<GitStatus> =>
+    ipcRenderer.invoke('git:stage-files', repositoryId, paths),
+  gitUnstageFiles: (repositoryId: string, paths: string[]): Promise<GitStatus> =>
+    ipcRenderer.invoke('git:unstage-files', repositoryId, paths),
+  gitListBranches: (repositoryId: string): Promise<GitBranchListResult> =>
+    ipcRenderer.invoke('git:list-branches', repositoryId),
+  gitSwitchBranch: (input: GitSwitchBranchInput): Promise<GitStatus> =>
+    ipcRenderer.invoke('git:switch-branch', input),
+
+  // ============ Git Workbench（Task 3）：commit / fetch / pull / push ============
+  // 提交/拉取/推送都是独立用户动作；无 force push、无 reset --hard、无自动
+  // commit+push 链路。commit 在主进程做身份/暂存/operation 前置校验。
+  gitGetIdentity: (repositoryId: string): Promise<GitIdentity> =>
+    ipcRenderer.invoke('git:get-identity', repositoryId),
+  gitCommit: (input: GitCommitInput): Promise<GitCommitResult> =>
+    ipcRenderer.invoke('git:commit', input),
+  gitFetch: (repositoryId: string): Promise<GitSyncResult> =>
+    ipcRenderer.invoke('git:fetch', repositoryId),
+  gitPull: (repositoryId: string): Promise<GitSyncResult> =>
+    ipcRenderer.invoke('git:pull', repositoryId),
+  gitPush: (repositoryId: string): Promise<GitSyncResult> =>
+    ipcRenderer.invoke('git:push', repositoryId),
+
+  // ============ Git Workbench：首次推送 + 丢弃工作区改动 ============
+  // push() 在无 upstream 时拒绝 NO_UPSTREAM，UI 引导用户从 listRemotes()
+  // 返回的远端列表中明确选择一个，再调用 pushUpstream(remote)。绝不静默
+  // 假设 origin。discardWorktreeFiles 仅作用于已跟踪未暂存改动，不触碰
+  // 暂存区、不删除未跟踪文件；UI 必须先弹确认框逐文件提示不可撤销。
+  gitListRemotes: (repositoryId: string): Promise<GitRemoteListResult> =>
+    ipcRenderer.invoke('git:list-remotes', repositoryId),
+  gitPushUpstream: (input: GitPushUpstreamInput): Promise<GitSyncResult> =>
+    ipcRenderer.invoke('git:push-upstream', input),
+  gitDiscardWorktreeFiles: (repositoryId: string, paths: string[]): Promise<GitStatus> =>
+    ipcRenderer.invoke('git:discard-worktree-files', repositoryId, paths),
+
+  // ============ Git Workbench：AI 生成提交说明 ============
+  // 渲染层只传 repositoryId + modelProfileId，主进程经闭合 Git 服务收集
+  // 「仅已暂存」的 diff（含 .env/.pem/密钥等路径排除 + 内容敏感度过滤 +
+  // 80 KiB/12,000 行聚合上限），再调用现有 AI 平台的 Provider/Key 一次性
+  // 生成。返回结构化 proposal（subject/body/rationale）+ 透明度元数据
+  // （excludedPaths/cappedPaths/totalBytes/totalLines/truncated）。绝不自动
+  // 暂存/提交/推送——渲染层把 subject/body 写入既有输入框供用户编辑。
+  gitProposeCommitMessage: (req: GitCommitProposalRequest): Promise<GitCommitProposalResult> =>
+    ipcRenderer.invoke('git:propose-commit-message', req),
 }
 
 contextBridge.exposeInMainWorld('raintool', api)

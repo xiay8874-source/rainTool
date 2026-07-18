@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createWriteStream, unlinkSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -30,6 +30,9 @@ import type {
   DiagramUpdateInput,
   LegacyDiagramInput,
 } from './diagram-types.js'
+import { GitRepositoryService } from './git-repository-service.js'
+import type { GitCommitInput, GitCommitProposalRequest, GitPushUpstreamInput } from './git-types.js'
+import { GitRunnerError } from './git-runner.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -82,6 +85,41 @@ function assertTrustedRenderer(event: Electron.IpcMainInvokeEvent | Electron.Ipc
     throw new Error('拒绝来自非 RainTool 主渲染页的请求')
   }
 }
+
+/**
+ * 把 GitRepositoryService 抛出的 GitError 转成 IPC 可传输的 Error。
+ * Electron 把 ipcMain.handle 抛出的 Error 的 .message 透传给渲染进程的
+ * ipcRenderer.invoke reject；我们在 message 里编码结构化 code，渲染层用
+ * parseGitIpcError 还原。原始 stderr/命令行/token 永不泄露——服务层已脱敏。
+ */
+function toIpcError(e: unknown): Error {
+  const gitErr = e as { code?: string; message?: string } | undefined
+  const code = gitErr?.code ?? 'COMMAND_FAILED'
+  const message = gitErr?.message ?? 'Git 操作失败'
+  const err = new Error(`[git:${code}] ${message}`)
+  // 额外挂在 .code 上，方便渲染层直接读取（contextBridge 透传自有属性）。
+  ;(err as { code?: string }).code = code
+  return err
+}
+
+/**
+ * System prompt for the AI commit-message proposer (Task 4). Instructs the model
+ * to base the proposal ONLY on the provided staged diff context, to reply with
+ * strict JSON matching the title-only CommitProposalSchema, and to
+ * avoid speculative content. The user prompt (built by the service) carries the
+ * staged context; this system prompt is static + secret-free.
+ */
+const COMMIT_PROPOSAL_SYSTEM_PROMPT = [
+  '你是一个 Git 提交标题助手。仅根据用户提供的「已暂存变更」上下文生成一个提交标题。',
+  '上下文中的已暂存 patch 就是本任务的完整输入；必须直接生成标题，不要索要更多 diff 或代码。',
+  '未暂存或未跟踪的文件不在上下文中，不要臆测它们。',
+  '敏感文件（.env/.pem/密钥等）已排除，仅提供文件名与状态——不要在输出中还原其内容。',
+  '只输出一行纯文本提交标题，不要输出 JSON、解释、正文或 markdown 代码块。',
+  '标题必须使用英文；代码标识符、文件名和 API 名称保持原样。',
+  'subject 使用简洁的英文祈使语气，最多 100 个字符，优先使用 Conventional Commit 格式（type(scope): summary）。',
+  '即使输入的 diff 或用户界面文案为中文，也不得输出中文提交说明。',
+  '不要添加 body、rationale、type、scope、breaking、confidence 或其它字段。',
+].join('\n')
 
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -149,6 +187,12 @@ const diagramBridge = new DiagramBridgeServer({
   onChanged: emitDiagramChanged,
   onDeleted: emitDiagramDeleted,
 })
+
+// ============ Git Workbench (Task 1+2) ============
+// 单例 GitRepositoryService：持有 repoId→root 映射、最近仓库、status/diff/stage。
+// 所有 IPC handler 都先 assertTrustedRenderer，渲染进程拿不到 cwd/root/命令，
+// 只能传 repositoryId（由主进程在 open 时分配）。
+const gitRepositoryService = new GitRepositoryService()
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 
 if (!hasSingleInstanceLock) {
@@ -229,6 +273,210 @@ ipcMain.handle('diagram:set-active', (event, id: string | null) => {
   if (id) diagramRepository.require(id)
   activeDiagramId = id
 })
+
+// ============ Git Workbench IPC（Task 1+2）============
+// 安全契约：所有 handler 先 assertTrustedRenderer；渲染进程只能传
+// repositoryId（主进程在 open 时分配的 opaque token），永不传 cwd/命令/参数。
+// 写操作（stage/unstage）在服务层用 FRESH status 快照重新校验路径，拒绝
+// 绝对路径、..  NUL 及不在快照中的路径。错误统一为脱敏的 GitError。
+ipcMain.handle('git:choose-repository', async (event) => {
+  assertTrustedRenderer(event)
+  // 原生目录选择对话框；用户取消返回 null，不抛错。
+  const result = await dialog.showOpenDialog({
+    title: '选择 Git 仓库',
+    properties: ['openDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('git:open-repository', async (event, absPath: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.openRepository(absPath)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:list-recent-repositories', (event) => {
+  assertTrustedRenderer(event)
+  return gitRepositoryService.listRecent()
+})
+
+ipcMain.handle('git:refresh-status', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.getStatus(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:get-diff', async (event, req: { repositoryId: string; path: string; source: 'staged' | 'unstaged' | 'untracked' }) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.getDiff(req)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:stage-files', async (event, repositoryId: string, paths: string[]) => {
+  assertTrustedRenderer(event)
+  try {
+    await gitRepositoryService.stageFiles(repositoryId, paths)
+    return await gitRepositoryService.getStatus(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:unstage-files', async (event, repositoryId: string, paths: string[]) => {
+  assertTrustedRenderer(event)
+  try {
+    await gitRepositoryService.unstageFiles(repositoryId, paths)
+    return await gitRepositoryService.getStatus(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:list-branches', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.listBranches(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:switch-branch', async (event, input: { repositoryId: string; branch: string }) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.switchBranch(input)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+// ============ Git Workbench IPC（Task 3：commit / fetch / pull / push）============
+// 同样的安全契约：assertTrustedRenderer 先行；渲染进程只传 repositoryId +
+// 提交文案，永不传 cwd/命令/参数。所有写操作在服务层做身份/暂存/operation
+// 前置校验，失败统一 toIpcError（脱敏）。无 force push / reset --hard / 自动
+// 提交+推送链路——每个操作都是独立的用户动作。
+ipcMain.handle('git:get-identity', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.getIdentity(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:commit', async (event, input: GitCommitInput) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.commit(input)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:fetch', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.fetch(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:pull', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.pullFfOnly(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:push', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.push(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:list-remotes', async (event, repositoryId: string) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.listRemotes(repositoryId)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:push-upstream', async (event, input: GitPushUpstreamInput) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.pushUpstream(input)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:discard-worktree-files', async (event, repositoryId: string, paths: string[]) => {
+  assertTrustedRenderer(event)
+  try {
+    return await gitRepositoryService.discardWorktreeFiles(repositoryId, paths)
+  } catch (e) {
+    throw toIpcError(e)
+  }
+})
+
+ipcMain.handle('git:propose-commit-message', async (event, req: GitCommitProposalRequest) => {
+  assertTrustedRenderer(event)
+  try {
+    // Bridge the closed Git service (staged-only context) + the existing AI
+    // platform (configured provider/profile/key). The renderer passes ONLY
+    // repositoryId + modelProfileId — no cwd, argv, paths, or diff text.
+    const platform = getAiPlatform()
+    if (!platform) {
+      throw new GitRunnerError('AI_UNAVAILABLE', 'AI 平台未初始化')
+    }
+    if (!req?.modelProfileId) {
+      throw new GitRunnerError('AI_UNAVAILABLE', '未选择 AI Provider，请先在 AI 设置中配置并选择一个')
+    }
+    // 1. Collect staged-only context (redacted + capped) via the closed service.
+    const ctx = await gitRepositoryService.collectStagedContext(req.repositoryId)
+    // 2. One-shot provider call → strict zod-validated proposal.
+    const proposal = await platform.runtime.proposeCommitMessage({
+      modelProfileId: req.modelProfileId,
+      system: COMMIT_PROPOSAL_SYSTEM_PROMPT,
+      userPrompt: ctx.prompt,
+    })
+    // 3. Return the editable proposal + transparency metadata.
+    return {
+      subject: proposal.subject,
+      body: proposal.body,
+      rationale: proposal.rationale,
+      excludedPaths: ctx.excludedPaths,
+      cappedPaths: ctx.cappedPaths,
+      totalBytes: ctx.totalBytes,
+      totalLines: ctx.totalLines,
+      truncated: ctx.truncated,
+    }
+  } catch (e) {
+    // ProposeError carries a .code (AI_UNAVAILABLE/AI_PROVIDER_FAILED/
+    // AI_SCHEMA_INVALID/COMMAND_TIMEOUT); toIpcError reads .code + .message
+    // generically, so no instanceof check is needed.
+    throw toIpcError(e)
+  }
+})
+
 ipcMain.on('diagram:renderer-ready', (event) => {
   assertTrustedRenderer(event)
   diagramRendererReady = true
